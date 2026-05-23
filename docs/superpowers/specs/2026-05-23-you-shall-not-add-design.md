@@ -13,6 +13,23 @@ feeds, behavioral analysis) to existing tools like `npq` and Socket. Our ground
 is the thing none of them do well and that is naturally zero-dependency:
 **provenance and enforcement**.
 
+## Core principle (read this first)
+
+> **The tool does not prevent the bypass. It makes the bypass impossible to hide.**
+
+This is the thesis of the entire project, and every design decision follows from
+it. We cannot stop a human or an AI agent from running raw `pnpm add`, from
+hand-editing `package.json`, from passing `--force-with-reason "trust me"`, or
+even from hand-editing the ledger — any *local-execution* defense is bypassable,
+so we do not fight there. Instead, we guarantee that **every path to a passing CI
+leaves a committed, reviewable artifact in the diff.** A risky dependency cannot
+enter the repo *silently*; it can only enter *loudly*, attributed, and gated by a
+human reviewer.
+
+So when reading the rest of this spec, do not evaluate a mechanism by "can the
+agent get around it locally?" (it always can) but by "does getting around it
+produce a visible artifact a human must approve?"
+
 ## Why this exists
 
 The pre-install review checklist is already solved by `npq` (open source) and
@@ -74,11 +91,28 @@ agent/dev → safe-add X → [alternatives] → [fetch metadata] → [age + scri
     "approvedVersion": "4.17.21",
     "approvedAt": "2026-05-23T10:00:00Z",
     "risk": "low",                 // low | medium | high
-    "reason": null,                // required non-empty string when forced/high
+    "reason": null,                // attribution: who/what added it & why (agent-supplied on --force)
+    "approvedBy": null,            // authorization: a second-party signal the agent cannot self-issue
     "checks": { "ageHours": 900, "installScripts": false }
   }
 }
 ```
+
+**`reason` vs `approvedBy` — the distinction that closes the bypass:**
+
+- **`reason`** is *attribution*, not authorization. It is supplied by whoever ran
+  `safe-add` (including an agent on `--force-with-reason`). It answers "what
+  happened and why," and makes the action loud and named in the diff. It does
+  **not** by itself authorize a risky dependency.
+- **`approvedBy`** is *authorization* — a second-party signal an agent cannot
+  fabricate for itself. It is the human/reviewer sign-off that lets a high-risk
+  entry pass CI. `safe-add` never writes this for a forced high-risk entry; it is
+  added by a human as a separate, reviewable change (or supplied by a CI step a
+  human controls).
+
+This is why an agent cannot bypass the gate by simply inventing a reason: the
+reason gets it *recorded*, but only `approvedBy` gets it *merged* (see `check`
+and `requireApprovalForHighRisk`).
 
 - v1 enforces **name presence** — every name in `dependencies` and
   `devDependencies` must appear in the ledger.
@@ -112,8 +146,18 @@ calls** — `npx you-shall-not-add check`, exit 0 = pass, non-zero = fail:
 
 - Read `dependencies` + `devDependencies` from `package.json`.
 - Every name must have a ledger entry → else **fail and list the offenders**.
-- Any entry with `risk: "high"` must have a non-empty `reason`.
+- Any entry with `risk: "high"` must have a non-empty `reason` (attribution).
+- When `requireApprovalForHighRisk` is true (default), any entry with
+  `risk: "high"` must **also** have a non-empty `approvedBy` (authorization). A
+  forced high-risk entry with a reason but no `approvedBy` **fails** — this is the
+  step that stops an agent from self-approving by inventing a reason.
 - Exit non-zero on any violation.
+
+Because the ledger is a committed file, the only way to satisfy `approvedBy` is a
+visible diff a reviewer makes — consistent with the core principle. Branch
+protection requiring human review of ledger/`package.json` changes is the
+irreducible backstop (a determined actor could hand-forge an entry; the reviewer
+is what catches that).
 
 ### Native checks (`checks.ts`)
 
@@ -169,6 +213,7 @@ manager.
   "minimumVersionAgeHours": 24,
   "warnVersionAgeHours": 168,
   "blockInstallScripts": true,
+  "requireApprovalForHighRisk": true,   // high-risk needs approvedBy, not just a reason
   "allowScopedPackages": ["@your-org/*"],
   "packageManager": "auto",        // auto | pnpm | npm | yarn
   "knownAlternatives": { "moment": "Prefer date-fns or Intl APIs" }
