@@ -294,6 +294,9 @@ you-shall-not-add/
     check-command.ts
     pm.ts
     config.ts
+    art.ts                     # ASCII/ANSI art + TTY/NO_COLOR/--quiet rules
+  assets/
+    banner.svg                 # README header (fantasy + 80s palette)
   test/
   examples/
     pre-commit.sh
@@ -309,6 +312,30 @@ you-shall-not-add/
 why existing deps don't suffice, whether a built-in works), and to never bypass
 a block. The ledger + CI `check` is the enforcement that backs those
 instructions — instructions alone are not enforcement.
+
+## Branding & CLI presentation
+
+Theme: **Gandalf / Moria, fantasy motifs (gate, staff, runes) in an 80s color
+palette.** The personality is part of the product — the gate should *feel* like a
+gate. Three surfaces:
+
+1. **Block banner (`art.ts`)** — when `safe-add` BLOCKS, print a "YOU SHALL NOT
+   PASS" ASCII/ANSI banner. **Always shown, even non-TTY** — a block is meant to
+   be loud and unmissable in logs and PR output. Uses ANSI color when supported,
+   degrades to plain ASCII otherwise.
+2. **README header banner** — a hand-written **SVG** in `assets/`: fantasy gate /
+   staff / rune motif rendered in a retro 80s palette. Vector, no binary
+   tooling.
+3. **Wordmark on normal runs** — small ASCII wordmark, but **TTY-aware**: shown
+   only on interactive terminals. **Auto-suppressed when output is not a TTY**
+   (piped, CI, agent invocation) or when `--quiet` / `NO_COLOR` is set. This
+   keeps machine/agent output clean — noise in non-interactive output is treated
+   as a bug.
+
+Color handling respects `NO_COLOR` and absence of a TTY. All art lives in one
+module (`art.ts`) so presentation is isolated from logic and easy to test (the
+TTY/`NO_COLOR`/`--quiet` suppression rules are unit-tested against a fake
+stdout).
 
 ## Threat model — what we do and don't defend against
 
