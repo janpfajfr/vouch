@@ -1,0 +1,23 @@
+{
+  "name": "you-shall-not-add",
+  "version": "0.1.0",
+  "description": "A Gandalf-style dependency-governance gate for Node.js projects and coding agents.",
+  "type": "module",
+  "bin": {
+    "safe-add": "dist/src/cli.js",
+    "you-shall-not-add": "dist/src/cli.js"
+  },
+  "files": ["dist/src", "assets"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test 'dist/test/**/*.js'",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
+  },
+  "license": "MIT"
+}
