@@ -165,7 +165,17 @@ Only checks that need **no maintained data**, so they never rot and stay
 zero-dep:
 
 - **Version age** — registry publish time. Block `< 24h`, warn `< 7d`, allow
-  `>= 7d`. Thresholds configurable.
+  `>= 7d`. Thresholds configurable. **Not our differentiator:** as of 2026 all
+  three managers gate release age natively (pnpm `minimumReleaseAge`, Yarn
+  `npmMinimalAgeGate`, npm `min-release-age`). Our age check exists only as a
+  **pre-decision explanation layer** — it tells the human/agent *why* a version
+  is risky *before* `package.json`/the lockfile changes, which the native,
+  silent install-time refusals do not. We do not pretend to own age-gating.
+- **Cooldown verification** — detect whether the active package manager has a
+  release-age cooldown configured (`minimumReleaseAge` / `npmMinimalAgeGate` /
+  `min-release-age`). If not, warn (and optionally fail `check`, via
+  `requireCooldownConfigured`). This makes us a governance layer *on top of* the
+  native primitive rather than a worse reimplementation of it.
 - **Install scripts** — inspect `preinstall`, `install`, `postinstall`,
   `prepare`, `prepublish`, `prepublishOnly` in metadata. Block by default;
   allow only via `--force-with-reason`.
@@ -214,6 +224,7 @@ manager.
   "warnVersionAgeHours": 168,
   "blockInstallScripts": true,
   "requireApprovalForHighRisk": true,   // high-risk needs approvedBy, not just a reason
+  "requireCooldownConfigured": false,   // check fails if PM has no native release-age cooldown set
   "allowScopedPackages": ["@your-org/*"],
   "packageManager": "auto",        // auto | pnpm | npm | yarn
   "knownAlternatives": { "moment": "Prefer date-fns or Intl APIs" }
@@ -298,6 +309,40 @@ you-shall-not-add/
 why existing deps don't suffice, whether a built-in works), and to never bypass
 a block. The ledger + CI `check` is the enforcement that backs those
 instructions — instructions alone are not enforcement.
+
+## Threat model — what we do and don't defend against
+
+Being explicit here keeps the tool honest and prevents the overclaiming that
+rightly gets security tools mocked.
+
+**We defend against (consumer-side governance):**
+
+- A dependency entering the repo *silently* — raw `pnpm add`, a hand-edited
+  `package.json`, or an agent skipping review. `check` fails CI with no ledger
+  entry.
+- An agent self-approving a risky dependency by inventing a reason — `reason` is
+  attribution only; merging a high-risk entry requires a second-party
+  `approvedBy` (see `requireApprovalForHighRisk`).
+- Adding a dependency that a built-in or an already-present package makes
+  unnecessary — the alternatives engine surfaces it before it's added.
+- Install-scripted packages slipping in unreviewed — blocked by default.
+
+**We do NOT defend against (out of scope by design):**
+
+- **Publisher-side / pipeline compromise** — e.g. the TanStack incident
+  (May 2026): a poisoned CI cache stole an OIDC token and published malware
+  directly to npm. No install script, no typosquat. This is a *maintainer's*
+  problem (pin actions to SHAs, fix `pull_request_target`, per-publish OIDC
+  gates). Our consumer-side gate has no bearing on it. For *downstream consumers*
+  of such a release, the relevant defense is the **release-age cooldown** — which
+  is now **native** in pnpm/Yarn/npm, not something we provide. We at most
+  *verify it is configured*.
+- **Behavioral / deep scanning** — obfuscated payloads, network/filesystem access
+  in install scripts, malware signatures. That is `npq`/Socket's job.
+- **A determined local actor** — anyone who can run code locally can hand-forge a
+  ledger entry. The irreducible backstop is branch protection + human review of
+  ledger/`package.json` diffs. Our job is only to guarantee every path to a
+  passing CI leaves a reviewable artifact.
 
 ## Explicit non-goals (v1)
 
