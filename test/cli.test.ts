@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSafeAdd, parseSpec } from "../src/cli.js";
 import { readLedger } from "../src/ledger.js";
-import type { RegistryClient, PackageMetadata } from "../src/registry.js";
+import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
 
 function fakeRegistry(meta: Partial<PackageMetadata>): RegistryClient {
   return {
@@ -20,6 +20,43 @@ function setup() {
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "host", dependencies: {} }));
   return dir;
 }
+
+test("registry unavailable fails closed: no install, no ledger, exit 1", async () => {
+  const dir = setup();
+  try {
+    let installed = false;
+    const code = await runSafeAdd({
+      spec: "lodash", dev: false, force: null,
+      registry: { async fetchMetadata() { throw new RegistryUnavailableError("down"); } },
+      installer: { async install() { installed = true; return 0; } },
+      now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 1);
+    assert.equal(installed, false);
+    assert.deepEqual(readLedger(dir), {});
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("allowlisted scoped package skips the gate even with install scripts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "host", dependencies: {} }));
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ allowScopedPackages: ["@acme/*"] }));
+    const code = await runSafeAdd({
+      spec: "@acme/widget", dev: false, force: null,
+      registry: fakeRegistry({ scripts: { postinstall: "x" } }),
+      installer: { async install() { return 0; } },
+      now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    const e = readLedger(dir)["@acme/widget"];
+    assert.equal(e.risk, "low");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("parseSpec handles plain, versioned, and scoped names", () => {
   assert.deepEqual(parseSpec("lodash"), { name: "lodash", version: undefined });

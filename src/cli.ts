@@ -2,8 +2,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { loadConfig } from "./config.js";
-import { readLedger, writeLedger, upsertEntry, type LedgerEntry } from "./ledger.js";
+import { loadConfig, isAllowlisted } from "./config.js";
+import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, type Finding } from "./checks.js";
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
@@ -57,14 +57,21 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     throw e;
   }
 
-  const findings: Finding[] = [
-    checkVersionAge(meta.publishedAt, opts.now(), cfg),
-    checkInstallScripts(meta.scripts, cfg),
-  ];
-  for (const f of findings) if (f.level !== "ok") opts.log(`${f.level.toUpperCase()}: ${f.message}`);
+  const allowlisted = isAllowlisted(name, cfg.allowScopedPackages);
 
-  const risk = overallRisk(findings);
-  const blocked = findings.some((f) => f.level === "block");
+  let risk: Risk = "low";
+  let blocked = false;
+  if (allowlisted) {
+    opts.log(`note: "${name}" matches allowScopedPackages; skipping risk gate.`);
+  } else {
+    const findings: Finding[] = [
+      checkVersionAge(meta.publishedAt, opts.now(), cfg),
+      checkInstallScripts(meta.scripts, cfg),
+    ];
+    for (const f of findings) if (f.level !== "ok") opts.log(`${f.level.toUpperCase()}: ${f.message}`);
+    risk = overallRisk(findings);
+    blocked = findings.some((f) => f.level === "block");
+  }
 
   if (blocked && !opts.force) {
     opts.err(blockBanner(outputOpts()));

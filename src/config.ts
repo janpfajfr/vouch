@@ -41,3 +41,11 @@ export function loadConfig(cwd: string): Config {
   }
   return { ...DEFAULT_CONFIG, ...parsed };
 }
+
+/** True if `name` matches any glob pattern in `patterns` (only `*` is special). */
+export function isAllowlisted(name: string, patterns: string[]): boolean {
+  return patterns.some((p) => {
+    const escaped = p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    return new RegExp(`^${escaped}$`).test(name);
+  });
+}
