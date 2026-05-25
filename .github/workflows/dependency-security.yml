@@ -16,4 +16,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npx you-shall-not-add check
+      - run: npm ci && npm run build
+      - run: node dist/src/cli.js check
