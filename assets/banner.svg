@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="220" viewBox="0 0 800 220" role="img" aria-label="you-shall-not-add">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b0a4a"/>
+      <stop offset="1" stop-color="#0b0220"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff2e97"/>
+      <stop offset="1" stop-color="#ff8a3d"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="220" fill="url(#sky)"/>
+  <circle cx="400" cy="150" r="80" fill="url(#sun)"/>
+  <g stroke="#00e5ff" stroke-width="1.5" opacity="0.6">
+    <line x1="0" y1="170" x2="800" y2="170"/>
+    <line x1="0" y1="190" x2="800" y2="190"/>
+    <line x1="0" y1="215" x2="800" y2="215"/>
+    <line x1="400" y1="170" x2="120" y2="220"/>
+    <line x1="400" y1="170" x2="680" y2="220"/>
+  </g>
+  <rect x="330" y="70" width="140" height="100" fill="none" stroke="#00e5ff" stroke-width="3"/>
+  <text x="400" y="48" text-anchor="middle" font-family="monospace" font-size="34" fill="#ff2e97" font-weight="bold">you-shall-not-add</text>
+  <text x="400" y="128" text-anchor="middle" font-family="monospace" font-size="14" fill="#e6e6e6">YOU SHALL NOT PASS</text>
+</svg>
