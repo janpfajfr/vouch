@@ -18,7 +18,7 @@ export function runCheck(pkg: PackageJsonLike, ledger: Ledger, cfg: Config): Che
   for (const name of names) {
     const entry = ledger[name];
     if (!entry) {
-      violations.push({ package: name, reason: "no ledger entry — was it added without safe-add?" });
+      violations.push({ package: name, reason: "no ledger entry — was it added without vouch?" });
       continue;
     }
     if (entry.risk === "high") {
@@ -62,7 +62,7 @@ export async function runCheckWithCve(
     for (const a of d.newAdvisories) {
       violations.push({
         package: d.package,
-        reason: `${d.package}@${version} gained ${a.id} (${a.severity}) since approval — re-approve: safe-add reapprove ${d.package} --approved-by "<you>"`,
+        reason: `${d.package}@${version} gained ${a.id} (${a.severity}) since approval — re-approve: vouch reapprove ${d.package} --approved-by "<you>"`,
       });
     }
   }

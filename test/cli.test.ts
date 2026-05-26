@@ -139,7 +139,7 @@ test("ledger is NOT written when install fails", async () => {
   }
 });
 
-test("safe-add warns about a CVE on the installed version and points to reapprove, without acknowledging it", async () => {
+test("vouch warns about a CVE on the installed version and points to reapprove, without acknowledging it", async () => {
   const dir = setup();
   try {
     const logs: string[] = [];
@@ -159,7 +159,7 @@ test("safe-add warns about a CVE on the installed version and points to reapprov
   }
 });
 
-test("safe-add fails open when the advisory service is unavailable", async () => {
+test("vouch fails open when the advisory service is unavailable", async () => {
   const dir = setup();
   try {
     const logs: string[] = [];

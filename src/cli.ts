@@ -83,7 +83,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     if (found.length > 0) {
       const list = found.map((a) => `${a.id} (${a.severity})`).join(", ");
       opts.log(`WARN: ${name}@${meta.version} has known ${found.length === 1 ? "advisory" : "advisories"}: ${list}.`);
-      opts.log(`note: \`check\` will block until a human acknowledges this — run: safe-add reapprove ${name} --approved-by "<name>" (or upgrade to a patched version).`);
+      opts.log(`note: \`check\` will block until a human acknowledges this — run: vouch reapprove ${name} --approved-by "<name>" (or upgrade to a patched version).`);
     }
   }
 
@@ -182,7 +182,7 @@ async function main(argv: string[]): Promise<number> {
     const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : "";
     const skip = new Set(ai >= 0 ? [ai, ai + 1] : []);
     const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
-    if (!pkg) { console.error('Usage: safe-add reapprove <package> --approved-by "<name>"'); return 1; }
+    if (!pkg) { console.error('Usage: vouch reapprove <package> --approved-by "<name>"'); return 1; }
     if (approvedBy.trim() === "" || approvedBy.startsWith("-")) { console.error("reapprove requires --approved-by \"<name>\" (authorization, not attribution)."); return 1; }
     return runReapprove({ pkg, approvedBy, client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
@@ -192,7 +192,7 @@ async function main(argv: string[]): Promise<number> {
   const fi = args.indexOf("--force-with-reason");
   const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
   const spec = positionals[0];
-  if (!spec) { console.error("Usage: safe-add <package> [-D] [--force-with-reason \"<reason>\"]\n       safe-add check\n       safe-add reapprove <package> --approved-by \"<name>\""); return 1; }
+  if (!spec) { console.error("Usage: vouch <package> [-D] [--force-with-reason \"<reason>\"]\n       vouch check\n       vouch reapprove <package> --approved-by \"<name>\""); return 1; }
   if (force !== null && force.trim() === "") { console.error("--force-with-reason requires a non-empty reason."); return 1; }
 
   return runSafeAdd({

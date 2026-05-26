@@ -1,11 +1,10 @@
 {
-  "name": "you-shall-not-add",
+  "name": "vouch",
   "version": "0.1.0",
-  "description": "A Gandalf-style dependency-governance gate for Node.js projects and coding agents.",
+  "description": "A dependency-governance gate that records who vouched for each dependency — for Node.js projects and coding agents.",
   "type": "module",
   "bin": {
-    "safe-add": "dist/src/cli.js",
-    "you-shall-not-add": "dist/src/cli.js"
+    "vouch": "dist/src/cli.js"
   },
   "files": ["dist/src", "assets"],
   "engines": { "node": ">=18" },

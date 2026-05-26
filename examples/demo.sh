@@ -1,5 +1,5 @@
 #!/bin/sh
-# Live, end-to-end demo of you-shall-not-add against the real npm registry.
+# Live, end-to-end demo of vouch against the real npm registry.
 #
 #   ./examples/demo.sh
 #
@@ -28,10 +28,10 @@ echo '{"name":"demo","version":"1.0.0"}' > "$DEMO/package.json"
 echo '{"packageManager":"npm"}'          > "$DEMO/.safe-dep.json"
 cd "$DEMO"
 
-run() { echo; echo "\$ safe-add $*"; node "$CLI" "$@"; echo "  exit: $?"; }
+run() { echo; echo "\$ vouch $*"; node "$CLI" "$@"; echo "  exit: $?"; }
 
 echo
-echo "########## 1) safe-add left-pad — alternatives nudge, then allow + install ##########"
+echo "########## 1) vouch left-pad — alternatives nudge, then allow + install ##########"
 run left-pad --quiet
 
 echo
@@ -39,7 +39,7 @@ echo "---------- ledger entry written ----------"
 cat .security/dependency-approvals.json
 
 echo
-echo "########## 2) safe-add esbuild — has a postinstall script, expect BLOCK ##########"
+echo "########## 2) vouch esbuild — has a postinstall script, expect BLOCK ##########"
 run esbuild --quiet
 
 echo

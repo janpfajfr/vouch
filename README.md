@@ -1,4 +1,4 @@
-# you-shall-not-add
+# vouch
 
 ![banner](assets/banner.svg)
 
@@ -31,11 +31,11 @@ Instead of:
 
 run:
 
-    npx you-shall-not-add some-package      # alias: safe-add some-package
+    npx vouch some-package      # or, installed: vouch some-package
 
 Then, in CI, add one step:
 
-    npx you-shall-not-add check             # fails the build on any unreviewed dependency
+    npx vouch check             # fails the build on any unreviewed dependency
 
 That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main` unreviewed.
 
@@ -43,7 +43,7 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
 
 ## How it works
 
-**When you add a package** (`safe-add`):
+**When you add a package** (`vouch`):
 
 1. Suggests **built-in or already-present alternatives** (`uuid` → `crypto.randomUUID()`,
    "you already have remeda").
@@ -55,7 +55,7 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
 **In CI** (`check`):
 
 - Fails the build if any dependency in `package.json` has **no ledger entry** — i.e. it was
-  added without `safe-add`.
+  added without `vouch`.
 - Fails if a dependency **gained a CVE** that no human has acknowledged.
 - A high-risk entry only passes once a human has signed off (see *Attribution vs authorization*).
 
@@ -65,10 +65,10 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
 
 | Command | What it does |
 |---|---|
-| `safe-add <pkg> [-D]` | Review, install, and record a dependency (`-D` for devDependencies). |
-| `safe-add <pkg> --force-with-reason "<why>"` | Override a block, recording the reason as attribution. |
-| `safe-add check` | CI gate: fail on unreviewed deps, missing approvals, or unacknowledged CVEs. |
-| `safe-add reapprove <pkg> --approved-by "<name>"` | A named human acknowledges a dependency's current advisories. |
+| `vouch <pkg> [-D]` | Review, install, and record a dependency (`-D` for devDependencies). |
+| `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason as attribution. |
+| `vouch check` | CI gate: fail on unreviewed deps, missing approvals, or unacknowledged CVEs. |
+| `vouch reapprove <pkg> --approved-by "<name>"` | A named human acknowledges a dependency's current advisories. |
 
 Environment: `YSNA_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
 
@@ -93,10 +93,10 @@ You can always force a thing through. You can never do it *invisibly*.
 A block isn't damage — it's a pause: *something about a dependency you vouched for changed.*
 You have three honest options, in order of preference:
 
-1. **Fix it** — `safe-add <pkg>@<patched-version>` to re-approve a fixed release.
+1. **Fix it** — `vouch <pkg>@<patched-version>` to re-approve a fixed release.
 2. **Remove or replace it** — drop the dependency (or take a suggested alternative).
 3. **Accept it knowingly** — once you've judged the risk acceptable (dev-only, unreachable
-   code path, no fix yet), `safe-add reapprove <pkg> --approved-by "<name>"`.
+   code path, no fix yet), `vouch reapprove <pkg> --approved-by "<name>"`.
 
 `reapprove` re-queries advisories for the approved version and records the acknowledged set,
 who acknowledged it, and when — visible in the PR diff. It refuses to write while offline
@@ -129,7 +129,7 @@ All optional; sensible defaults apply.
 
 ## For coding agents
 
-`AGENTS.md` tells agents to use `safe-add` instead of raw installs, to explain *why* a
+`AGENTS.md` tells agents to use `vouch` instead of raw installs, to explain *why* a
 dependency is needed before adding it, and — crucially — **not** to silence the gate on a
 human's behalf. As agents add more dependencies, the ledger becomes the place a human reviews
 those decisions, asynchronously and accountably.

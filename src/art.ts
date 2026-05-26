@@ -14,11 +14,12 @@ export function shouldShowWordmark(opts: OutputOpts): boolean {
 }
 
 const WORDMARK_TEXT = [
-  "  __  _____  _   _   ____  _  _   _   _    _    _  _  ___ _____ ",
-  " |  \\/  / _ \\| | | | / ___|| || | /_\\ | |  | |  | \\| |/ _ \\_   _|",
-  " | |\\/| | (_) | |_| | \\___ \\ __ |/ _ \\| |__| |__| .  | (_) || |  ",
-  " |_|  |_|\\___/ \\___/  |____/_||_/_/ \\_\\____|____|_|\\_|\\___/ |_|  ",
-  "          you-shall-not-add — review before it enters the repo",
+  "                       _     ",
+  " __   _____  _   _  ___| |__  ",
+  " \\ \\ / / _ \\| | | |/ __| '_ \\ ",
+  "  \\ V / (_) | |_| | (__| | | |",
+  "   \\_/ \\___/ \\__,_|\\___|_| |_|",
+  "   vouch — put your name on every dependency",
 ].join("\n");
 
 export function wordmark(opts: OutputOpts): string {
