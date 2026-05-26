@@ -53,3 +53,24 @@ test("reapprove without --approved-by exits 1", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("reapprove rejects a flag as the --approved-by value", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(
+      join(dir, ".security", "dependency-approvals.json"),
+      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
+    );
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, "reapprove", "lodash", "--approved-by", "-x"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      (err: NodeJS.ErrnoException & { status?: number }) => {
+        assert.equal(err.status, 1);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
