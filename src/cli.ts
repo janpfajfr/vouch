@@ -35,6 +35,7 @@ export interface SafeAddOptions {
   force: string | null;
   registry: RegistryClient;
   installer: Installer;
+  advisoryClient?: AdvisoryClient;
   now: () => Date;
   cwd: string;
   log: (s: string) => void;
@@ -72,6 +73,18 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     for (const f of findings) if (f.level !== "ok") opts.log(`${f.level.toUpperCase()}: ${f.message}`);
     risk = overallRisk(findings);
     blocked = findings.some((f) => f.level === "block");
+  }
+
+  // Surface known advisories at install time so `check` is never the first messenger.
+  // Informational only (warn, not block) and fail-open: an unreachable service is silent.
+  if (opts.advisoryClient) {
+    const live = await opts.advisoryClient.fetchBulk({ [name]: [meta.version] });
+    const found = live?.[name] ?? [];
+    if (found.length > 0) {
+      const list = found.map((a) => `${a.id} (${a.severity})`).join(", ");
+      opts.log(`WARN: ${name}@${meta.version} has known ${found.length === 1 ? "advisory" : "advisories"}: ${list}.`);
+      opts.log(`note: \`check\` will block until a human acknowledges this — run: safe-add reapprove ${name} --approved-by "<name>" (or upgrade to a patched version).`);
+    }
   }
 
   if (blocked && !opts.force) {
@@ -186,6 +199,7 @@ async function main(argv: string[]): Promise<number> {
     spec, dev, force,
     registry: new NpmRegistryClient(),
     installer: realInstaller(),
+    advisoryClient: new NpmAdvisoryClient(),
     now: () => new Date(),
     cwd,
     log: (s) => console.log(s),

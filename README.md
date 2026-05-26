@@ -28,9 +28,10 @@ cannot slip in unreviewed.
   cooldowns are native in pnpm/Yarn/npm; we surface and verify, not reimplement).
 - **Install-time scripts** — blocked by default.
 - **Alternatives** — `uuid` → `crypto.randomUUID()`, or "you already have remeda".
-- **CVE drift** — records the advisory posture of the *approved version* in the ledger.
-  If a dependency later gains an advisory nobody acknowledged, `check` fails until a human
-  runs `safe-add reapprove <pkg> --approved-by "<name>"`. Offline never fails the gate
+- **CVE drift** — `safe-add` warns you at install time if the version you're adding already
+  has a known advisory (so `check` is never the first messenger). Thereafter, if a dependency
+  gains an advisory nobody acknowledged, `check` fails until a human runs
+  `safe-add reapprove <pkg> --approved-by "<name>"`. Offline never fails the gate
   (we warn that we couldn't verify, but only *block* on a CVE we confirmed).
 
 ## What it is not

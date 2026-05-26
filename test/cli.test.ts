@@ -139,6 +139,45 @@ test("ledger is NOT written when install fails", async () => {
   }
 });
 
+test("safe-add warns about a CVE on the installed version and points to reapprove, without acknowledging it", async () => {
+  const dir = setup();
+  try {
+    const logs: string[] = [];
+    const code = await runSafeAdd({
+      spec: "lodash", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      advisoryClient: { async fetchBulk() { return { lodash: [{ id: "GHSA-x", severity: "high" }] }; } },
+      now: () => new Date("2026-05-23"), cwd: dir, log: (s) => logs.push(s), err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.ok(logs.some((s) => /GHSA-x/.test(s)), "names the advisory");
+    assert.ok(logs.some((s) => /reapprove/.test(s)), "points to reapprove");
+    assert.equal(readLedger(dir).lodash.cve, undefined); // never silently acknowledged
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("safe-add fails open when the advisory service is unavailable", async () => {
+  const dir = setup();
+  try {
+    const logs: string[] = [];
+    const code = await runSafeAdd({
+      spec: "lodash", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      advisoryClient: { async fetchBulk() { return null; } },
+      now: () => new Date("2026-05-23"), cwd: dir, log: (s) => logs.push(s), err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.ok(!logs.some((s) => /advisory|advisories/i.test(s)), "no CVE noise when unverifiable");
+    assert.equal(readLedger(dir).lodash.risk, "low");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 const reapproveClient = (data: Record<string, Advisory[]> | null): AdvisoryClient => ({ async fetchBulk() { return data; } });
 
 function seedLedger(entry: object): string {
