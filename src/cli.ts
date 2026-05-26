@@ -18,6 +18,20 @@ export function parseSpec(spec: string): { name: string; version: string | undef
   return { name: spec, version: undefined };
 }
 
+export interface AddArgs { spec?: string; dev: boolean; force: string | null; error?: string; }
+
+export function parseAddArgs(args: string[]): AddArgs {
+  const dev = args.includes("-D") || args.includes("--save-dev");
+  const fi = args.indexOf("--force-with-reason");
+  const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
+  const skip = new Set<number>(fi >= 0 ? [fi, fi + 1] : []);
+  const positionals = args.filter((a, i) => !skip.has(i) && !a.startsWith("-"));
+  if (positionals.length === 0) return { dev, force, error: "no-package" };
+  if (positionals.length > 1) return { dev, force, spec: positionals[0], error: `unexpected extra argument: "${positionals[1]}"` };
+  if (force !== null && (force.trim() === "" || force.startsWith("-"))) return { dev, force, spec: positionals[0], error: "--force-with-reason requires a non-empty reason." };
+  return { spec: positionals[0], dev, force };
+}
+
 export function helpText(): string {
   return [
     "vouch — a dependency-governance gate that records who vouched for each dependency.",

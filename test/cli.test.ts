@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec, runReapprove, helpText } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runReapprove, helpText, parseAddArgs } from "../src/cli.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
@@ -237,4 +237,32 @@ test("runReapprove errors on unknown package", async () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("parseAddArgs: package then reason (correct order)", () => {
+  assert.deepEqual(parseAddArgs(["esbuild", "--force-with-reason", "needs build"]),
+    { spec: "esbuild", dev: false, force: "needs build" });
+});
+
+test("parseAddArgs: -D marks devDependency", () => {
+  assert.deepEqual(parseAddArgs(["lodash", "-D"]), { spec: "lodash", dev: true, force: null });
+});
+
+test("parseAddArgs: flag value is excluded from the package positional", () => {
+  const r = parseAddArgs(["--force-with-reason", "esbuild", "x"]);
+  assert.equal(r.force, "esbuild");
+  assert.equal(r.spec, "x");
+});
+
+test("parseAddArgs: more than one package positional is an error", () => {
+  const r = parseAddArgs(["a", "b"]);
+  assert.match(r.error ?? "", /extra argument/i);
+});
+
+test("parseAddArgs: no package yields the no-package marker", () => {
+  assert.equal(parseAddArgs(["--force-with-reason", "x"]).error, "no-package");
+});
+
+test("parseAddArgs: empty or flag-like reason is rejected", () => {
+  assert.match(parseAddArgs(["a", "--force-with-reason", "-D"]).error ?? "", /reason/i);
 });
