@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -73,4 +73,29 @@ test("reapprove rejects a flag as the --approved-by value", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("--help prints usage and exits 0", () => {
+  const out = execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
+  assert.match(out, /Usage:/);
+  assert.match(out, /vouch reapprove/);
+});
+
+test("'help' shows help and exits 0 (does not try to install a package called 'help')", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: {} }));
+    const out = execFileSync(process.execPath, [cli, "help"], { cwd: dir, encoding: "utf8" });
+    assert.match(out, /Usage:/);
+    // 'help' must not have been installed
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    assert.equal(pkg.dependencies.help, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--version prints a semver and exits 0", () => {
+  const out = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
+  assert.match(out, /\d+\.\d+\.\d+/);
 });
