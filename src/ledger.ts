@@ -12,7 +12,7 @@ export interface AcknowledgedAdvisory {
 
 export interface CveSnapshot {
   acknowledged: AcknowledgedAdvisory[]; // human-signed-off set, sorted by id
-  acknowledgedBy: string | null;
+  acknowledgedBy: string;               // the human who re-approved (always set)
   acknowledgedAt: string;               // ISO 8601
 }
 
