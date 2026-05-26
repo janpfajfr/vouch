@@ -3,7 +3,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
-import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk } from "./ledger.js";
+import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk, type Approval } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
@@ -185,6 +185,37 @@ export async function runReapprove(opts: ReapproveOptions): Promise<number> {
   const updated = { ...entry, cve: { acknowledged, acknowledgedBy: opts.approvedBy, acknowledgedAt: opts.now().toISOString() } };
   writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, updated));
   opts.log(`Re-approved ${opts.pkg}: acknowledged ${acknowledged.length} advisor${acknowledged.length === 1 ? "y" : "ies"} (by ${opts.approvedBy}).`);
+  return 0;
+}
+
+export interface ApproveOptions {
+  pkg: string;
+  approvedBy: string | null;     // explicit name, or null to auto-derive
+  identity: () => string | null; // injected git identity
+  now: () => Date;
+  cwd: string;
+  log: (s: string) => void;
+  err: (s: string) => void;
+}
+
+export function runApprove(opts: ApproveOptions): number {
+  const ledger = readLedger(opts.cwd);
+  const entry = ledger[opts.pkg];
+  if (!entry) { opts.err(`Not in ledger: ${opts.pkg}. Add it first with: vouch ${opts.pkg}`); return 1; }
+
+  let by: string;
+  let via: Approval["via"];
+  if (opts.approvedBy && opts.approvedBy.trim() !== "") {
+    by = opts.approvedBy.trim(); via = "manual";
+  } else {
+    const id = opts.identity();
+    if (!id) { opts.err('Could not determine your identity from git config. Pass --approved-by "<name>".'); return 1; }
+    by = id; via = "git-config";
+  }
+
+  const approval: Approval = { by, via, at: opts.now().toISOString() };
+  writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, { ...entry, approval }));
+  opts.log(`Approved ${opts.pkg} (by ${by}, via ${via}).`);
   return 0;
 }
 
