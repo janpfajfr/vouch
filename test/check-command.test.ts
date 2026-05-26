@@ -89,3 +89,18 @@ test("runCheckWithCve still reports base violations (missing entry)", async () =
   const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, {}, DEFAULT_CONFIG, fakeClient({}));
   assert.ok(r.violations.some((v) => /no ledger entry/i.test(v.reason)));
 });
+
+test("runCheckWithCve queries the approved version, not the package.json range", async () => {
+  const ledger = { lodash: acked("4.17.20", []) };
+  let seen: Record<string, string[]> | undefined;
+  const client: AdvisoryClient = { async fetchBulk(pkgVersions) { seen = pkgVersions; return {}; } };
+  await runCheckWithCve({ dependencies: { lodash: "^4" } }, ledger, DEFAULT_CONFIG, client);
+  assert.deepEqual(seen, { lodash: ["4.17.20"] });
+});
+
+test("runCheckWithCve checks devDependencies too", async () => {
+  const ledger = { typescript: acked("5.5.0", ["GHSA-old"]) };
+  const r = await runCheckWithCve({ devDependencies: { typescript: "^5" } }, ledger, DEFAULT_CONFIG,
+    fakeClient({ typescript: [{ id: "GHSA-new", severity: "high" }] }));
+  assert.ok(r.violations.some((v) => v.package === "typescript" && /reapprove/i.test(v.reason)));
+});
