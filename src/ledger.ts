@@ -3,6 +3,15 @@ import { join, dirname } from "node:path";
 
 export type Risk = "low" | "medium" | "high";
 
+export type ApprovalVia = "manual" | "git-config" | "signed-commit" | "github-review";
+
+export interface Approval {
+  by: string;
+  via: ApprovalVia;
+  at: string;        // ISO 8601
+  ref?: string;      // commit SHA / PR review id (Phase 2)
+}
+
 export type CveSeverity = "low" | "moderate" | "high" | "critical";
 
 export interface AcknowledgedAdvisory {
@@ -24,6 +33,7 @@ export interface LedgerEntry {
   approvedBy: string | null;
   checks: { ageHours: number | null; installScripts: Record<string, string> | false };
   cve?: CveSnapshot;
+  approval?: Approval;
 }
 
 export type Ledger = Record<string, LedgerEntry>;
@@ -58,4 +68,10 @@ export function writeLedger(cwd: string, ledger: Ledger): void {
 
 export function upsertEntry(ledger: Ledger, name: string, entry: LedgerEntry): Ledger {
   return { ...ledger, [name]: entry };
+}
+
+/** The effective approver: the new approval record, else the legacy approvedBy, else null. */
+export function approverOf(entry: LedgerEntry): string | null {
+  const by = entry.approval?.by ?? entry.approvedBy;
+  return by && by.trim() !== "" ? by : null;
 }

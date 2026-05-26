@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readLedger, writeLedger, upsertEntry, LedgerEntry } from "../src/ledger.js";
+import { readLedger, writeLedger, upsertEntry, approverOf, type LedgerEntry } from "../src/ledger.js";
 
 const entry: LedgerEntry = {
   approvedVersion: "4.17.21",
@@ -49,4 +49,22 @@ test("readLedger throws on malformed file", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const base: LedgerEntry = {
+  approvedVersion: "1.0.0", approvedAt: "x", risk: "high", reason: "r",
+  approvedBy: null, checks: { ageHours: 1, installScripts: false },
+};
+
+test("approverOf prefers the new approval record", () => {
+  assert.equal(approverOf({ ...base, approval: { by: "Jan <j@x>", via: "git-config", at: "t" } }), "Jan <j@x>");
+});
+
+test("approverOf falls back to the legacy approvedBy", () => {
+  assert.equal(approverOf({ ...base, approvedBy: "Alice" }), "Alice");
+});
+
+test("approverOf returns null when neither is set or is blank", () => {
+  assert.equal(approverOf(base), null);
+  assert.equal(approverOf({ ...base, approvedBy: "   " }), null);
 });
