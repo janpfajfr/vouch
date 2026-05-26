@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec, runReapprove } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runReapprove, helpText } from "../src/cli.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
@@ -57,6 +57,14 @@ test("allowlisted scoped package skips the gate even with install scripts", asyn
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("helpText lists the usage and every command", () => {
+  const h = helpText();
+  assert.match(h, /Usage:/);
+  assert.match(h, /vouch check/);
+  assert.match(h, /vouch reapprove/);
+  assert.match(h, /--force-with-reason/);
 });
 
 test("parseSpec handles plain, versioned, and scoped names", () => {

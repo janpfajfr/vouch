@@ -18,6 +18,38 @@ export function parseSpec(spec: string): { name: string; version: string | undef
   return { name: spec, version: undefined };
 }
 
+export function helpText(): string {
+  return [
+    "vouch — a dependency-governance gate that records who vouched for each dependency.",
+    "",
+    "Usage:",
+    '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
+    "  vouch check                                             CI gate: fail on unreviewed deps or unacknowledged CVEs",
+    '  vouch reapprove <package> --approved-by "<name>"        Acknowledge a dependency\'s current advisories',
+    "  vouch --help | --version",
+    "",
+    "Flags:",
+    "  -D, --save-dev            Add as a devDependency",
+    '  --force-with-reason "…"   Override a block, recording the reason (attribution, not authorization)',
+    '  --approved-by "<name>"    Human authorization recorded in the ledger (reapprove)',
+    "  --quiet                   Suppress the wordmark banner",
+    "",
+    "Environment:",
+    "  YSNA_ADVISORY_URL         Override the npm advisory endpoint (enterprise mirrors/proxies)",
+    "",
+    "The approval ledger lives at .security/dependency-approvals.json and is meant to be committed.",
+  ].join("\n");
+}
+
+function readVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    return `vouch ${pkg.version}`;
+  } catch {
+    return "vouch (unknown version)";
+  }
+}
+
 function existingDeps(cwd: string): string[] {
   try {
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
@@ -166,6 +198,9 @@ async function main(argv: string[]): Promise<number> {
   const args = argv.filter((a) => a !== "--quiet");
   const cmd = args[0];
 
+  if (cmd === "--version" || cmd === "-V") { console.log(readVersion()); return 0; }
+  if (cmd === "help" || cmd === "--help" || cmd === "-h") { console.log(helpText()); return 0; }
+
   if (cmd === "check") {
     const cfg = loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
@@ -192,7 +227,7 @@ async function main(argv: string[]): Promise<number> {
   const fi = args.indexOf("--force-with-reason");
   const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
   const spec = positionals[0];
-  if (!spec) { console.error("Usage: vouch <package> [-D] [--force-with-reason \"<reason>\"]\n       vouch check\n       vouch reapprove <package> --approved-by \"<name>\""); return 1; }
+  if (!spec) { console.error(helpText()); return 1; }
   if (force !== null && force.trim() === "") { console.error("--force-with-reason requires a non-empty reason."); return 1; }
 
   return runSafeAdd({
