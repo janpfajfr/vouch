@@ -1,5 +1,6 @@
 import type { Config } from "./config.js";
 import type { Ledger } from "./ledger.js";
+import { detectDrift, type AdvisoryClient } from "./advisories.js";
 
 export interface PackageJsonLike {
   dependencies?: Record<string, string>;
@@ -30,4 +31,40 @@ export function runCheck(pkg: PackageJsonLike, ledger: Ledger, cfg: Config): Che
     }
   }
   return violations;
+}
+
+export async function runCheckWithCve(
+  pkg: PackageJsonLike,
+  ledger: Ledger,
+  cfg: Config,
+  client: AdvisoryClient,
+): Promise<{ violations: CheckViolation[]; warnings: string[] }> {
+  const violations = runCheck(pkg, ledger, cfg);
+  const warnings: string[] = [];
+
+  const names = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})];
+  const pkgVersions: Record<string, string[]> = {};
+  for (const name of names) {
+    const entry = ledger[name];
+    if (entry) pkgVersions[name] = [entry.approvedVersion];
+  }
+
+  const live = await client.fetchBulk(pkgVersions);
+  if (live === null) {
+    if (Object.keys(pkgVersions).length > 0) {
+      warnings.push("Could not verify advisories (offline or registry error); CVE drift was not checked.");
+    }
+    return { violations, warnings };
+  }
+
+  for (const d of detectDrift(ledger, live)) {
+    const version = ledger[d.package]?.approvedVersion ?? "?";
+    for (const a of d.newAdvisories) {
+      violations.push({
+        package: d.package,
+        reason: `${d.package}@${version} gained ${a.id} (${a.severity}) since approval — re-approve: safe-add reapprove ${d.package} --approved-by "<you>"`,
+      });
+    }
+  }
+  return { violations, warnings };
 }

@@ -49,3 +49,43 @@ test("approval not required when requireApprovalForHighRisk is false", () => {
   const v = runCheck({ dependencies: { evil: "1" } }, ledger, cfg);
   assert.deepEqual(v, []);
 });
+
+import { runCheckWithCve } from "../src/check-command.js";
+import type { AdvisoryClient, Advisory } from "../src/advisories.js";
+
+const fakeClient = (data: Record<string, Advisory[]> | null): AdvisoryClient => ({
+  async fetchBulk() { return data; },
+});
+
+const acked = (version: string, ids: string[]) => ({
+  ...base, approvedVersion: version, risk: "low" as const,
+  cve: { acknowledged: ids.map((id) => ({ id, severity: "low" as const })), acknowledgedBy: "alice", acknowledgedAt: "x" },
+});
+
+test("runCheckWithCve turns an unacknowledged advisory into a violation", async () => {
+  const ledger = { lodash: acked("4.17.20", ["GHSA-old"]) };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, ledger, DEFAULT_CONFIG,
+    fakeClient({ lodash: [{ id: "GHSA-old", severity: "low" }, { id: "GHSA-new", severity: "high" }] }));
+  assert.equal(r.warnings.length, 0);
+  assert.ok(r.violations.some((v) => v.package === "lodash" && /reapprove/i.test(v.reason)));
+});
+
+test("runCheckWithCve adds no CVE violation when advisories are acknowledged", async () => {
+  const ledger = { lodash: acked("4.17.20", ["GHSA-old"]) };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, ledger, DEFAULT_CONFIG,
+    fakeClient({ lodash: [{ id: "GHSA-old", severity: "low" }] }));
+  assert.deepEqual(r.violations, []);
+});
+
+test("runCheckWithCve fails open: client null yields a warning, no violation", async () => {
+  const ledger = { lodash: acked("4.17.20", []) };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, ledger, DEFAULT_CONFIG, fakeClient(null));
+  assert.deepEqual(r.violations, []);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /could not verify/i);
+});
+
+test("runCheckWithCve still reports base violations (missing entry)", async () => {
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, {}, DEFAULT_CONFIG, fakeClient({}));
+  assert.ok(r.violations.some((v) => /no ledger entry/i.test(v.reason)));
+});
