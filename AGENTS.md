@@ -26,3 +26,8 @@ If `safe-add` blocks the package, the agent MUST NOT bypass it with
 authorization: a high-risk dependency only passes CI once a human adds
 `approvedBy` to its ledger entry. The agent should instead propose a safer
 alternative.
+
+If `check` reports that a dependency gained a CVE since approval, the agent MUST NOT
+silently re-acknowledge it. Re-approval (`safe-add reapprove <pkg> --approved-by "<name>"`)
+records a human's name as authorization and is visible in the committed ledger. The agent
+should surface the advisory to a human, not clear the gate on their behalf.

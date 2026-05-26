@@ -28,11 +28,17 @@ cannot slip in unreviewed.
   cooldowns are native in pnpm/Yarn/npm; we surface and verify, not reimplement).
 - **Install-time scripts** — blocked by default.
 - **Alternatives** — `uuid` → `crypto.randomUUID()`, or "you already have remeda".
+- **CVE drift** — records the advisory posture of the *approved version* in the ledger.
+  If a dependency later gains an advisory nobody acknowledged, `check` fails until a human
+  runs `safe-add reapprove <pkg> --approved-by "<name>"`. Offline never fails the gate
+  (we warn that we couldn't verify, but only *block* on a CVE we confirmed).
 
 ## What it is not
 
-Not a scanner. Deep per-package analysis (typosquatting, CVEs, behavioral) is the
-job of tools like `npq` and Socket. This tool owns **provenance and enforcement**.
+Not a scanner. Deep per-package analysis (typosquatting, behavioral) is the job of tools
+like `npq` and Socket. We do not *scan* for CVEs at install time; we record the advisory
+posture of what you approved and flag *drift* after the fact — provenance and enforcement,
+not discovery. This tool owns **provenance and enforcement**.
 
 ## Overrides
 
@@ -40,6 +46,16 @@ job of tools like `npq` and Socket. This tool owns **provenance and enforcement*
 
 A reason is *attribution*. A high-risk dependency only passes CI once a human
 adds `approvedBy` to its ledger entry (`requireApprovalForHighRisk`).
+
+## Re-approving after CVE drift
+
+    safe-add check                                  # in CI: BLOCKED if a dep gained a CVE
+    safe-add reapprove lodash --approved-by "Jane"  # a human acknowledges the new advisory
+
+Re-approval re-queries advisories for the approved version and records the acknowledged set,
+who acknowledged it, and when, in the committed ledger — so the acknowledgement is visible in
+the PR diff. It refuses to write while offline (we never record an acknowledgement we couldn't
+verify). Point `YSNA_ADVISORY_URL` at a mirror if you proxy the npm advisory endpoint.
 
 ## Zero dependencies
 
