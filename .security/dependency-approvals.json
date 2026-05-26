@@ -1,0 +1,18 @@
+{
+  "@types/node": {
+    "approvedVersion": "^22.0.0",
+    "approvedAt": "2026-05-23T00:00:00Z",
+    "risk": "low",
+    "reason": "Dev-only TypeScript toolchain; type definitions, no install scripts.",
+    "approvedBy": null,
+    "checks": { "ageHours": null, "installScripts": false }
+  },
+  "typescript": {
+    "approvedVersion": "^5.5.0",
+    "approvedAt": "2026-05-23T00:00:00Z",
+    "risk": "low",
+    "reason": "Dev-only compiler; the project's own build toolchain, no install scripts.",
+    "approvedBy": null,
+    "checks": { "ageHours": null, "installScripts": false }
+  }
+}

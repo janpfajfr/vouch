@@ -1,0 +1,22 @@
+{
+  "name": "vouch",
+  "version": "0.1.0",
+  "description": "A dependency-governance gate that records who vouched for each dependency — for Node.js projects and coding agents.",
+  "type": "module",
+  "bin": {
+    "vouch": "dist/src/cli.js"
+  },
+  "files": ["dist/src", "assets"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test 'dist/test/**/*.js'",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
+  },
+  "license": "MIT"
+}

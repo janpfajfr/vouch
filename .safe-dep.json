@@ -1,0 +1,12 @@
+{
+  "minimumVersionAgeHours": 24,
+  "warnVersionAgeHours": 168,
+  "blockInstallScripts": true,
+  "requireApprovalForHighRisk": true,
+  "requireCooldownConfigured": false,
+  "allowScopedPackages": [],
+  "packageManager": "auto",
+  "knownAlternatives": {
+    "moment": "Prefer date-fns or the Intl APIs."
+  }
+}
