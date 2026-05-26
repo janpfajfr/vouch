@@ -3,6 +3,19 @@ import { join, dirname } from "node:path";
 
 export type Risk = "low" | "medium" | "high";
 
+export type CveSeverity = "low" | "moderate" | "high" | "critical";
+
+export interface AcknowledgedAdvisory {
+  id: string;            // GHSA id, else the npm advisory id as a string
+  severity: CveSeverity;
+}
+
+export interface CveSnapshot {
+  acknowledged: AcknowledgedAdvisory[]; // human-signed-off set, sorted by id
+  acknowledgedBy: string | null;
+  acknowledgedAt: string;               // ISO 8601
+}
+
 export interface LedgerEntry {
   approvedVersion: string;
   approvedAt: string;
@@ -10,6 +23,7 @@ export interface LedgerEntry {
   reason: string | null;
   approvedBy: string | null;
   checks: { ageHours: number | null; installScripts: Record<string, string> | false };
+  cve?: CveSnapshot;
 }
 
 export type Ledger = Record<string, LedgerEntry>;
