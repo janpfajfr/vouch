@@ -285,8 +285,24 @@ test("runApprove uses an explicit --approved-by as manual", () => {
       now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
     assert.equal(code, 0);
     const e = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8")).lodash;
-    assert.equal(e.approval.by, "Alice");
-    assert.equal(e.approval.via, "manual");
+    assert.deepEqual(e.approval, { by: "Alice", via: "manual", at: "2026-05-26T00:00:00.000Z" });
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("runApprove preserves other ledger entries", () => {
+  const cwd = seedLedger({ risk: "high", reason: "needed" });
+  try {
+    // add a second, unrelated entry to the seeded ledger
+    const path = join(cwd, ".security", "dependency-approvals.json");
+    const ledger = JSON.parse(readFileSync(path, "utf8"));
+    ledger.express = { approvedVersion: "4.0.0", approvedAt: "x", risk: "low", reason: null, approvedBy: "Bob", checks: { ageHours: 1, installScripts: false } };
+    writeFileSync(path, JSON.stringify(ledger, null, 2));
+    const code = runApprove({ pkg: "lodash", approvedBy: "Alice", identity: () => null,
+      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
+    assert.equal(code, 0);
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(after.lodash.approval.by, "Alice");
+    assert.equal(after.express.approvedBy, "Bob"); // sibling untouched
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
