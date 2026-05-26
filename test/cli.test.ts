@@ -151,28 +151,43 @@ function seedLedger(entry: object): string {
 
 test("runReapprove records the live advisory set and acknowledgedBy", async () => {
   const cwd = seedLedger({});
-  const log: string[] = [];
-  const code = await runReapprove({
-    pkg: "lodash", approvedBy: "alice", client: reapproveClient({ lodash: [{ id: "GHSA-new", severity: "high" }] }),
-    cwd, now: () => new Date("2026-05-26T00:00:00Z"), log: (s) => log.push(s), err: () => {},
-  });
-  assert.equal(code, 0);
-  const ledger = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"));
-  assert.deepEqual(ledger.lodash.cve.acknowledged, [{ id: "GHSA-new", severity: "high" }]);
-  assert.equal(ledger.lodash.cve.acknowledgedBy, "alice");
-  assert.equal(ledger.lodash.cve.acknowledgedAt, "2026-05-26T00:00:00.000Z");
+  try {
+    const log: string[] = [];
+    const code = await runReapprove({
+      pkg: "lodash", approvedBy: "alice", client: reapproveClient({ lodash: [{ id: "GHSA-new", severity: "high" }] }),
+      cwd, now: () => new Date("2026-05-26T00:00:00Z"), log: (s) => log.push(s), err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.ok(log.some((s) => /re-approved/i.test(s)));
+    const ledger = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"));
+    assert.deepEqual(ledger.lodash.cve.acknowledged, [{ id: "GHSA-new", severity: "high" }]);
+    assert.equal(ledger.lodash.cve.acknowledgedBy, "alice");
+    assert.equal(ledger.lodash.cve.acknowledgedAt, "2026-05-26T00:00:00.000Z");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("runReapprove errors and leaves ledger unchanged when offline", async () => {
   const cwd = seedLedger({});
-  const before = readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8");
-  const code = await runReapprove({ pkg: "lodash", approvedBy: "alice", client: reapproveClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
-  assert.equal(code, 1);
-  assert.equal(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"), before);
+  try {
+    const before = readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8");
+    const code = await runReapprove({ pkg: "lodash", approvedBy: "alice", client: reapproveClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
+    assert.equal(code, 1);
+    assert.equal(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"), before);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("runReapprove errors on unknown package", async () => {
   const cwd = seedLedger({});
-  const code = await runReapprove({ pkg: "ghost", approvedBy: "alice", client: reapproveClient({}), cwd, now: () => new Date(), log: () => {}, err: () => {} });
-  assert.equal(code, 1);
+  try {
+    const errs: string[] = [];
+    const code = await runReapprove({ pkg: "ghost", approvedBy: "alice", client: reapproveClient({}), cwd, now: () => new Date(), log: () => {}, err: (s) => errs.push(s) });
+    assert.equal(code, 1);
+    assert.ok(errs.some((s) => /ghost/.test(s)));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
