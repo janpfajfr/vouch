@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runReapprove } from "../src/cli.js";
+import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
 
@@ -136,4 +137,42 @@ test("ledger is NOT written when install fails", async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const reapproveClient = (data: Record<string, Advisory[]> | null): AdvisoryClient => ({ async fetchBulk() { return data; } });
+
+function seedLedger(entry: object): string {
+  const cwd = mkdtempSync(join(tmpdir(), "ysna-"));
+  mkdirSync(join(cwd, ".security"));
+  writeFileSync(join(cwd, ".security", "dependency-approvals.json"),
+    JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false }, ...entry } }, null, 2));
+  return cwd;
+}
+
+test("runReapprove records the live advisory set and acknowledgedBy", async () => {
+  const cwd = seedLedger({});
+  const log: string[] = [];
+  const code = await runReapprove({
+    pkg: "lodash", approvedBy: "alice", client: reapproveClient({ lodash: [{ id: "GHSA-new", severity: "high" }] }),
+    cwd, now: () => new Date("2026-05-26T00:00:00Z"), log: (s) => log.push(s), err: () => {},
+  });
+  assert.equal(code, 0);
+  const ledger = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"));
+  assert.deepEqual(ledger.lodash.cve.acknowledged, [{ id: "GHSA-new", severity: "high" }]);
+  assert.equal(ledger.lodash.cve.acknowledgedBy, "alice");
+  assert.equal(ledger.lodash.cve.acknowledgedAt, "2026-05-26T00:00:00.000Z");
+});
+
+test("runReapprove errors and leaves ledger unchanged when offline", async () => {
+  const cwd = seedLedger({});
+  const before = readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8");
+  const code = await runReapprove({ pkg: "lodash", approvedBy: "alice", client: reapproveClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
+  assert.equal(code, 1);
+  assert.equal(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"), before);
+});
+
+test("runReapprove errors on unknown package", async () => {
+  const cwd = seedLedger({});
+  const code = await runReapprove({ pkg: "ghost", approvedBy: "alice", client: reapproveClient({}), cwd, now: () => new Date(), log: () => {}, err: () => {} });
+  assert.equal(code, 1);
 });

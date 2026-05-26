@@ -9,6 +9,7 @@ import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheck } from "./check-command.js";
+import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
 import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
 
 export function parseSpec(spec: string): { name: string; version: string | undefined } {
@@ -97,6 +98,34 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   };
   writeLedger(opts.cwd, upsertEntry(readLedger(opts.cwd), name, entry));
   opts.log("Decision: allowed.");
+  return 0;
+}
+
+export interface ReapproveOptions {
+  pkg: string;
+  approvedBy: string;
+  client: AdvisoryClient;
+  now: () => Date;
+  cwd: string;
+  log: (s: string) => void;
+  err: (s: string) => void;
+}
+
+export async function runReapprove(opts: ReapproveOptions): Promise<number> {
+  const ledger = readLedger(opts.cwd);
+  const entry = ledger[opts.pkg];
+  if (!entry) { opts.err(`Not in ledger: ${opts.pkg}`); return 1; }
+
+  const live = await opts.client.fetchBulk({ [opts.pkg]: [entry.approvedVersion] });
+  if (live === null) {
+    opts.err(`Could not verify advisories for ${opts.pkg} (offline or registry error); ledger unchanged.`);
+    return 1;
+  }
+
+  const acknowledged = live[opts.pkg] ?? [];
+  const updated = { ...entry, cve: { acknowledged, acknowledgedBy: opts.approvedBy, acknowledgedAt: opts.now().toISOString() } };
+  writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, updated));
+  opts.log(`Re-approved ${opts.pkg}: acknowledged ${acknowledged.length} advisor${acknowledged.length === 1 ? "y" : "ies"} (by ${opts.approvedBy}).`);
   return 0;
 }
 
