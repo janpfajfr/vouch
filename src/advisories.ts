@@ -1,4 +1,4 @@
-import type { CveSeverity } from "./ledger.js";
+import type { CveSeverity, Ledger } from "./ledger.js";
 
 export interface Advisory {
   id: string;
@@ -7,6 +7,22 @@ export interface Advisory {
 
 function normalizeSeverity(s: unknown): CveSeverity {
   return s === "moderate" || s === "high" || s === "critical" ? s : "low";
+}
+
+export interface CveDrift {
+  package: string;
+  newAdvisories: Advisory[];
+}
+
+/** For each live package, the advisories whose id is not in the entry's acknowledged set. */
+export function detectDrift(ledger: Ledger, live: Record<string, Advisory[]>): CveDrift[] {
+  const drift: CveDrift[] = [];
+  for (const [name, advisories] of Object.entries(live)) {
+    const ackIds = new Set((ledger[name]?.cve?.acknowledged ?? []).map((a) => a.id));
+    const newAdvisories = advisories.filter((a) => !ackIds.has(a.id));
+    if (newAdvisories.length > 0) drift.push({ package: name, newAdvisories });
+  }
+  return drift;
 }
 
 /** Maps the raw npm bulk-advisory response to `{ name: Advisory[] }`. Never throws. */

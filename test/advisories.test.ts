@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeAdvisories } from "../src/advisories.js";
+import { normalizeAdvisories, detectDrift } from "../src/advisories.js";
+import type { Ledger } from "../src/ledger.js";
 
 test("maps ghsa_id and severity per package", () => {
   const raw = {
@@ -32,4 +33,34 @@ test("skips malformed entries and sorts advisories by id", () => {
 test("returns empty object for non-object input", () => {
   assert.deepEqual(normalizeAdvisories(null), {});
   assert.deepEqual(normalizeAdvisories("nope"), {});
+});
+
+const entry = (version: string, ack: { id: string; severity: "low"|"moderate"|"high"|"critical" }[]) => ({
+  approvedVersion: version, approvedAt: "x", risk: "low" as const, reason: null, approvedBy: null,
+  checks: { ageHours: 1, installScripts: false as const },
+  cve: { acknowledged: ack, acknowledgedBy: "alice", acknowledgedAt: "x" },
+});
+
+test("detectDrift reports advisories not in the acknowledged set", () => {
+  const ledger: Ledger = { lodash: entry("4.17.20", [{ id: "GHSA-old", severity: "low" }]) };
+  const drift = detectDrift(ledger, { lodash: [{ id: "GHSA-old", severity: "low" }, { id: "GHSA-new", severity: "high" }] });
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0].package, "lodash");
+  assert.deepEqual(drift[0].newAdvisories, [{ id: "GHSA-new", severity: "high" }]);
+});
+
+test("detectDrift reports nothing when all advisories are acknowledged", () => {
+  const ledger: Ledger = { lodash: entry("4.17.20", [{ id: "GHSA-old", severity: "low" }]) };
+  assert.deepEqual(detectDrift(ledger, { lodash: [{ id: "GHSA-old", severity: "low" }] }), []);
+});
+
+test("detectDrift treats a missing cve field as an empty acknowledged set", () => {
+  const ledger: Ledger = { foo: { approvedVersion: "1", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } };
+  const drift = detectDrift(ledger, { foo: [{ id: "GHSA-z", severity: "critical" }] });
+  assert.deepEqual(drift[0].newAdvisories, [{ id: "GHSA-z", severity: "critical" }]);
+});
+
+test("detectDrift ignores resolved advisories (acknowledged but no longer live)", () => {
+  const ledger: Ledger = { lodash: entry("4.17.20", [{ id: "GHSA-old", severity: "low" }]) };
+  assert.deepEqual(detectDrift(ledger, { lodash: [] }), []);
 });
