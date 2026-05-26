@@ -11,7 +11,7 @@ test("check exits 1 on unreviewed dependency", () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
-    assert.throws(() => execFileSync(process.execPath, [cli, "check"], { cwd: dir, stdio: "pipe" }));
+    assert.throws(() => execFileSync(process.execPath, [cli, "check"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -24,10 +24,31 @@ test("check exits 0 when ledger covers deps", () => {
     mkdirSync(join(dir, ".security"), { recursive: true });
     writeFileSync(
       join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false }, cve: { acknowledged: [{ id: "1112455", severity: "moderate" }, { id: "1115806", severity: "high" }, { id: "1115810", severity: "moderate" }], acknowledgedBy: "test", acknowledgedAt: "x" } } }),
+      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
     );
-    const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8" });
+    const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } });
     assert.match(out, /all dependencies are approved/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reapprove without --approved-by exits 1", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(
+      join(dir, ".security", "dependency-approvals.json"),
+      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
+    );
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, "reapprove", "lodash"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      (err: NodeJS.ErrnoException & { status?: number }) => {
+        assert.equal(err.status, 1);
+        return true;
+      },
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

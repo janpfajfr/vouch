@@ -34,7 +34,8 @@ export class NpmAdvisoryClient implements AdvisoryClient {
   async fetchBulk(pkgVersions: Record<string, string[]>): Promise<Record<string, Advisory[]> | null> {
     if (Object.keys(pkgVersions).length === 0) return {};
     try {
-      const res = await fetch("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk", {
+      const url = process.env.YSNA_ADVISORY_URL ?? "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk";
+      const res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(pkgVersions),

@@ -165,9 +165,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (cmd === "reapprove") {
     const rest = args.slice(1);
-    const pkg = rest.find((a) => !a.startsWith("-"));
     const ai = rest.indexOf("--approved-by");
     const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : "";
+    const skip = new Set(ai >= 0 ? [ai, ai + 1] : []);
+    const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
     if (!pkg) { console.error('Usage: safe-add reapprove <package> --approved-by "<name>"'); return 1; }
     if (approvedBy.trim() === "") { console.error("reapprove requires --approved-by \"<name>\" (authorization, not attribution)."); return 1; }
     return runReapprove({ pkg, approvedBy, client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
