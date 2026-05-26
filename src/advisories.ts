@@ -25,6 +25,28 @@ export function detectDrift(ledger: Ledger, live: Record<string, Advisory[]>): C
   return drift;
 }
 
+export interface AdvisoryClient {
+  /** name -> versions present. Returns null on ANY error (offline/non-OK) — fail-open. */
+  fetchBulk(pkgVersions: Record<string, string[]>): Promise<Record<string, Advisory[]> | null>;
+}
+
+export class NpmAdvisoryClient implements AdvisoryClient {
+  async fetchBulk(pkgVersions: Record<string, string[]>): Promise<Record<string, Advisory[]> | null> {
+    if (Object.keys(pkgVersions).length === 0) return {};
+    try {
+      const res = await fetch("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(pkgVersions),
+      });
+      if (!res.ok) return null;
+      return normalizeAdvisories(await res.json());
+    } catch {
+      return null;
+    }
+  }
+}
+
 /** Maps the raw npm bulk-advisory response to `{ name: Advisory[] }`. Never throws. */
 export function normalizeAdvisories(raw: unknown): Record<string, Advisory[]> {
   if (typeof raw !== "object" || raw === null) return {};
