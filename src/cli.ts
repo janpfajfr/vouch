@@ -8,7 +8,7 @@ import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
-import { runCheck } from "./check-command.js";
+import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
 import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
 
@@ -156,10 +156,21 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "check") {
     const cfg = loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
-    const violations = runCheck(pkg, readLedger(cwd), cfg);
+    const { violations, warnings } = await runCheckWithCve(pkg, readLedger(cwd), cfg, new NpmAdvisoryClient());
+    for (const w of warnings) console.error(`WARN: ${w}`);
     if (violations.length === 0) { console.log("Dependency review: all dependencies are approved."); return 0; }
     for (const v of violations) console.error(`BLOCKED: ${v.package} — ${v.reason}`);
     return 1;
+  }
+
+  if (cmd === "reapprove") {
+    const rest = args.slice(1);
+    const pkg = rest.find((a) => !a.startsWith("-"));
+    const ai = rest.indexOf("--approved-by");
+    const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : "";
+    if (!pkg) { console.error('Usage: safe-add reapprove <package> --approved-by "<name>"'); return 1; }
+    if (approvedBy.trim() === "") { console.error("reapprove requires --approved-by \"<name>\" (authorization, not attribution)."); return 1; }
+    return runReapprove({ pkg, approvedBy, client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
 
   const positionals = args.filter((a) => !a.startsWith("-"));
@@ -167,7 +178,7 @@ async function main(argv: string[]): Promise<number> {
   const fi = args.indexOf("--force-with-reason");
   const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
   const spec = positionals[0];
-  if (!spec) { console.error("Usage: safe-add <package> [-D] [--force-with-reason \"<reason>\"]\n       safe-add check"); return 1; }
+  if (!spec) { console.error("Usage: safe-add <package> [-D] [--force-with-reason \"<reason>\"]\n       safe-add check\n       safe-add reapprove <package> --approved-by \"<name>\""); return 1; }
   if (force !== null && force.trim() === "") { console.error("--force-with-reason requires a non-empty reason."); return 1; }
 
   return runSafeAdd({

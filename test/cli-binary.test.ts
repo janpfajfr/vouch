@@ -24,7 +24,7 @@ test("check exits 0 when ledger covers deps", () => {
     mkdirSync(join(dir, ".security"), { recursive: true });
     writeFileSync(
       join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
+      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false }, cve: { acknowledged: [{ id: "1112455", severity: "moderate" }, { id: "1115806", severity: "high" }, { id: "1115810", severity: "moderate" }], acknowledgedBy: "test", acknowledgedAt: "x" } } }),
     );
     const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8" });
     assert.match(out, /all dependencies are approved/);
