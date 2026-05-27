@@ -106,6 +106,10 @@ approval fail the build. Verification is live at check time and never written to
 the workflow must run on `pull_request` and pass `GITHUB_TOKEN` (see
 `examples/github-actions-verify.yml`).
 
+Recorded approval is **attribution**, not **authorization** — the platform PR review is the
+real gate, and `vouch` feeds it rather than replacing it. See [`docs/threat-model.md`](docs/threat-model.md)
+for the trust tiers, what `vouch` does and does not defend, and the known verification gaps.
+
 ---
 
 ## When `check` blocks on a CVE
