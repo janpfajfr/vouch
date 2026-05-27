@@ -118,12 +118,10 @@ usual, and `check` passes because the committed ledger already covers every depe
 
 **When you add a package** (`vouch <pkg>`):
 
-1. Suggests **built-in or already-present alternatives** (`uuid` → `crypto.randomUUID()`,
-   "you already have remeda").
-2. Reviews it: **version age** and **install-time scripts** (blocked by default).
-3. Warns you **right then** if the version already has a **known CVE** — so `check` is never
+1. Reviews it: **version age** and **install-time scripts** (blocked by default).
+2. Warns you **right then** if the version already has a **known CVE** — so `check` is never
    the first messenger.
-4. Installs it and records the decision (version, risk, who added it and why) in the ledger.
+3. Installs it and records the decision (version, risk, who added it and why) in the ledger.
 
 **In CI** (`vouch check`) — three states per dependency: *recorded* (ok), *unrecorded*
 (blocked), or *needs review* (blocked). It fails when:
@@ -163,7 +161,7 @@ A block isn't damage — it's a pause: *something about a dependency you recorde
 honest options, in order of preference:
 
 1. **Fix it** — `vouch <pkg>@<patched-version>` to record a fixed release.
-2. **Remove or replace it** — drop the dependency (or take a suggested alternative).
+2. **Remove or replace it** — drop the dependency, or swap in a lighter one.
 3. **Accept it knowingly** — once you've judged the risk acceptable (dev-only, unreachable
    code path, no fix yet), `vouch acknowledge <pkg> --reason "<why this is acceptable>"`.
 
@@ -202,8 +200,7 @@ All optional; sensible defaults apply.
   "versionDrift": "warn",
   "requirePinned": "off",
   "allowScopedPackages": ["@your-org/*"],
-  "packageManager": "auto",
-  "knownAlternatives": { "moment": "Prefer date-fns or the Intl APIs." }
+  "packageManager": "auto"
 }
 ```
 
