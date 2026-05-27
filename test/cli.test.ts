@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec, runReapprove, helpText } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runReapprove, helpText, parseAddArgs, runApprove } from "../src/cli.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
@@ -63,6 +63,7 @@ test("helpText lists the usage and every command", () => {
   const h = helpText();
   assert.match(h, /Usage:/);
   assert.match(h, /vouch check/);
+  assert.match(h, /vouch approve/);
   assert.match(h, /vouch reapprove/);
   assert.match(h, /--force-with-reason/);
 });
@@ -237,4 +238,91 @@ test("runReapprove errors on unknown package", async () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("parseAddArgs: package then reason (correct order)", () => {
+  assert.deepEqual(parseAddArgs(["esbuild", "--force-with-reason", "needs build"]),
+    { spec: "esbuild", dev: false, force: "needs build" });
+});
+
+test("parseAddArgs: -D marks devDependency", () => {
+  assert.deepEqual(parseAddArgs(["lodash", "-D"]), { spec: "lodash", dev: true, force: null });
+});
+
+test("parseAddArgs: flag value is excluded from the package positional", () => {
+  const r = parseAddArgs(["--force-with-reason", "esbuild", "x"]);
+  assert.equal(r.force, "esbuild");
+  assert.equal(r.spec, "x");
+});
+
+test("parseAddArgs: more than one package positional is an error", () => {
+  const r = parseAddArgs(["a", "b"]);
+  assert.match(r.error ?? "", /extra argument/i);
+});
+
+test("parseAddArgs: no package yields the no-package marker", () => {
+  assert.equal(parseAddArgs(["--force-with-reason", "x"]).error, "no-package");
+});
+
+test("parseAddArgs: empty or flag-like reason is rejected", () => {
+  assert.match(parseAddArgs(["a", "--force-with-reason", "-D"]).error ?? "", /reason/i);
+});
+
+test("runApprove derives identity from git when no --approved-by is given", () => {
+  const cwd = seedLedger({ risk: "high", reason: "needed" });
+  try {
+    const code = runApprove({ pkg: "lodash", approvedBy: null, identity: () => "Jan <j@x>",
+      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
+    assert.equal(code, 0);
+    const e = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8")).lodash;
+    assert.deepEqual(e.approval, { by: "Jan <j@x>", via: "git-config", at: "2026-05-26T00:00:00.000Z" });
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("runApprove uses an explicit --approved-by as manual", () => {
+  const cwd = seedLedger({ risk: "high", reason: "needed" });
+  try {
+    const code = runApprove({ pkg: "lodash", approvedBy: "Alice", identity: () => null,
+      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
+    assert.equal(code, 0);
+    const e = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8")).lodash;
+    assert.deepEqual(e.approval, { by: "Alice", via: "manual", at: "2026-05-26T00:00:00.000Z" });
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("runApprove preserves other ledger entries", () => {
+  const cwd = seedLedger({ risk: "high", reason: "needed" });
+  try {
+    // add a second, unrelated entry to the seeded ledger
+    const path = join(cwd, ".security", "dependency-approvals.json");
+    const ledger = JSON.parse(readFileSync(path, "utf8"));
+    ledger.express = { approvedVersion: "4.0.0", approvedAt: "x", risk: "low", reason: null, approvedBy: "Bob", checks: { ageHours: 1, installScripts: false } };
+    writeFileSync(path, JSON.stringify(ledger, null, 2));
+    const code = runApprove({ pkg: "lodash", approvedBy: "Alice", identity: () => null,
+      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
+    assert.equal(code, 0);
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(after.lodash.approval.by, "Alice");
+    assert.equal(after.express.approvedBy, "Bob"); // sibling untouched
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("runApprove errors when identity cannot be determined and no name given", () => {
+  const cwd = seedLedger({});
+  try {
+    const errs: string[] = [];
+    const code = runApprove({ pkg: "lodash", approvedBy: null, identity: () => null,
+      now: () => new Date(), cwd, log: () => {}, err: (s: string) => errs.push(s) });
+    assert.equal(code, 1);
+    assert.match(errs.join("\n"), /git config|--approved-by/i);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("runApprove errors on a package not in the ledger", () => {
+  const cwd = seedLedger({});
+  try {
+    const code = runApprove({ pkg: "ghost", approvedBy: "Alice", identity: () => null,
+      now: () => new Date(), cwd, log: () => {}, err: () => {} });
+    assert.equal(code, 1);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

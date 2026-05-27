@@ -3,19 +3,34 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
-import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk } from "./ledger.js";
+import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk, type Approval } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
+import { gitIdentity } from "./identity.js";
 import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
 
 export function parseSpec(spec: string): { name: string; version: string | undefined } {
   const at = spec.lastIndexOf("@");
   if (at > 0) return { name: spec.slice(0, at), version: spec.slice(at + 1) };
   return { name: spec, version: undefined };
+}
+
+export interface AddArgs { spec?: string; dev: boolean; force: string | null; error?: string; }
+
+export function parseAddArgs(args: string[]): AddArgs {
+  const dev = args.includes("-D") || args.includes("--save-dev");
+  const fi = args.indexOf("--force-with-reason");
+  const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
+  const skip = new Set<number>(fi >= 0 ? [fi, fi + 1] : []);
+  const positionals = args.filter((a, i) => !skip.has(i) && !a.startsWith("-"));
+  if (positionals.length === 0) return { dev, force, error: "no-package" };
+  if (positionals.length > 1) return { dev, force, spec: positionals[0], error: `unexpected extra argument: "${positionals[1]}"` };
+  if (force !== null && (force.trim() === "" || force.startsWith("-"))) return { dev, force, spec: positionals[0], error: "--force-with-reason requires a non-empty reason." };
+  return { spec: positionals[0], dev, force };
 }
 
 export function helpText(): string {
@@ -25,13 +40,14 @@ export function helpText(): string {
     "Usage:",
     '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
     "  vouch check                                             CI gate: fail on unreviewed deps or unacknowledged CVEs",
+    '  vouch approve <package> [--approved-by "<name>"]        Record a human approver for a high-risk dependency',
     '  vouch reapprove <package> --approved-by "<name>"        Acknowledge a dependency\'s current advisories',
     "  vouch --help | --version",
     "",
     "Flags:",
     "  -D, --save-dev            Add as a devDependency",
     '  --force-with-reason "…"   Override a block, recording the reason (attribution, not authorization)',
-    '  --approved-by "<name>"    Human authorization recorded in the ledger (reapprove)',
+    '  --approved-by "<name>"    Human authorization recorded in the ledger (approve / reapprove)',
     "  --quiet                   Suppress the wordmark banner",
     "",
     "Environment:",
@@ -174,6 +190,37 @@ export async function runReapprove(opts: ReapproveOptions): Promise<number> {
   return 0;
 }
 
+export interface ApproveOptions {
+  pkg: string;
+  approvedBy: string | null;     // explicit name, or null to auto-derive
+  identity: () => string | null; // injected git identity
+  now: () => Date;
+  cwd: string;
+  log: (s: string) => void;
+  err: (s: string) => void;
+}
+
+export function runApprove(opts: ApproveOptions): number {
+  const ledger = readLedger(opts.cwd);
+  const entry = ledger[opts.pkg];
+  if (!entry) { opts.err(`Not in ledger: ${opts.pkg}. Add it first with: vouch ${opts.pkg}`); return 1; }
+
+  let by: string;
+  let via: Approval["via"];
+  if (opts.approvedBy && opts.approvedBy.trim() !== "") {
+    by = opts.approvedBy.trim(); via = "manual";
+  } else {
+    const id = opts.identity();
+    if (!id) { opts.err('Could not determine your identity from git config. Pass --approved-by "<name>".'); return 1; }
+    by = id; via = "git-config";
+  }
+
+  const approval: Approval = { by, via, at: opts.now().toISOString() };
+  writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, { ...entry, approval }));
+  opts.log(`Approved ${opts.pkg} (by ${by}, via ${via}).`);
+  return 0;
+}
+
 function outputOpts(): OutputOpts {
   return { isTTY: Boolean(process.stdout.isTTY), noColor: Boolean(process.env.NO_COLOR), quiet: process.argv.includes("--quiet") };
 }
@@ -222,13 +269,24 @@ async function main(argv: string[]): Promise<number> {
     return runReapprove({ pkg, approvedBy, client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
 
-  const positionals = args.filter((a) => !a.startsWith("-"));
-  const dev = args.includes("-D") || args.includes("--save-dev");
-  const fi = args.indexOf("--force-with-reason");
-  const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
-  const spec = positionals[0];
+  if (cmd === "approve") {
+    const rest = args.slice(1);
+    const ai = rest.indexOf("--approved-by");
+    const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : null;
+    const skip = new Set(ai >= 0 ? [ai, ai + 1] : []);
+    const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
+    if (!pkg) { console.error('Usage: vouch approve <package> [--approved-by "<name>"]'); return 1; }
+    if (approvedBy !== null && (approvedBy.trim() === "" || approvedBy.startsWith("-"))) { console.error("--approved-by needs a name value."); return 1; }
+    return runApprove({ pkg, approvedBy, identity: () => gitIdentity(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
+  }
+
+  const parsed = parseAddArgs(args);
+  if (parsed.error === "no-package") { console.error(helpText()); return 1; }
+  if (parsed.error) { console.error(parsed.error); return 1; }
+  const { spec, dev, force } = parsed;
+  // spec is always defined here (the error paths above exhaust the undefined case);
+  // this guard exists only for TypeScript narrowing of AddArgs.spec.
   if (!spec) { console.error(helpText()); return 1; }
-  if (force !== null && force.trim() === "") { console.error("--force-with-reason requires a non-empty reason."); return 1; }
 
   return runSafeAdd({
     spec, dev, force,

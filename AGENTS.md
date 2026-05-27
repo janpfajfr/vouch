@@ -27,6 +27,10 @@ authorization: a high-risk dependency only passes CI once a human adds
 `approvedBy` to its ledger entry. The agent should instead propose a safer
 alternative.
 
+To authorize a high-risk dependency, a human runs `vouch approve <pkg>` (which records their
+git identity) — an agent MUST NOT run `approve` on a human's behalf. Authorization is a human
+act; the agent's job is to surface the decision, not to make it.
+
 If `check` reports that a dependency gained a CVE since approval, the agent MUST NOT
 silently re-acknowledge it. Re-approval (`vouch reapprove <pkg> --approved-by "<name>"`)
 records a human's name as authorization and is visible in the committed ledger. The agent

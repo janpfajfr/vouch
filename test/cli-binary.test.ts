@@ -99,3 +99,23 @@ test("--version prints a semver and exits 0", () => {
   const out = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
   assert.match(out, /\d+\.\d+\.\d+/);
 });
+
+test("approve sets a git-config approver and check then passes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { evil: "1" } }));
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"),
+      JSON.stringify({ evil: { approvedVersion: "1.0.0", approvedAt: "x", risk: "high", reason: "needed", approvedBy: null, checks: { ageHours: 1, installScripts: false } } }));
+    const env = { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" };
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["config", "user.name", "Tester"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    const out = execFileSync(process.execPath, [cli, "approve", "evil"], { cwd: dir, encoding: "utf8", env });
+    assert.match(out, /Approved evil/);
+    const checkOut = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env });
+    assert.match(checkOut, /all dependencies are approved/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
