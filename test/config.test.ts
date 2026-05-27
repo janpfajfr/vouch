@@ -37,17 +37,11 @@ test("throws on malformed JSON", () => {
   }
 });
 
-test("approval config defaults to verification off", () => {
-  assert.deepEqual(DEFAULT_CONFIG.approval, { verify: "off", requireVerifiedApproval: false, allowedApprovers: [] });
-});
-
-test("a partial approval block keeps the other approval defaults", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+test("loadConfig has no approval block and no requireApprovalForHighRisk", () => {
+  const dir = mkdtempSync(join(tmpdir(), "vouch-cfg-"));
   try {
-    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ approval: { verify: "github-review" } }));
     const cfg = loadConfig(dir);
-    assert.equal(cfg.approval.verify, "github-review");
-    assert.equal(cfg.approval.requireVerifiedApproval, false);
-    assert.deepEqual(cfg.approval.allowedApprovers, []);
+    assert.ok(!("approval" in cfg));
+    assert.ok(!("requireApprovalForHighRisk" in cfg));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
