@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import { approverOf, type Ledger } from "./ledger.js";
 import { detectDrift, type AdvisoryClient } from "./advisories.js";
+import { permittedApprover, type ReviewClient } from "./review.js";
 
 export interface PackageJsonLike {
   dependencies?: Record<string, string>;
@@ -66,5 +67,31 @@ export async function runCheckWithCve(
       });
     }
   }
+  return { violations, warnings };
+}
+
+/** Verifies that high-risk approvals are backed by a permitted PR reviewer.
+ *  Fail-open: when verification cannot run, warns and never fails unless
+ *  requireVerifiedApproval is set. Live only — never writes the ledger. */
+export async function verifyApprovals(
+  ledger: Ledger, cfg: Config, client: ReviewClient,
+): Promise<{ violations: CheckViolation[]; warnings: string[] }> {
+  const violations: CheckViolation[] = [];
+  const warnings: string[] = [];
+  if (cfg.approval.verify !== "github-review") return { violations, warnings };
+
+  const needsAuth = Object.values(ledger).some((e) => e.risk === "high" && approverOf(e));
+  if (!needsAuth) return { violations, warnings };
+
+  const reviewers = await client.approvingReviewers();
+  if (reviewers === null) {
+    warnings.push("Could not verify approval (no PR context or GitHub token); approvals are unverified.");
+    return { violations, warnings };
+  }
+  if (permittedApprover(reviewers, cfg.approval.allowedApprovers)) return { violations, warnings };
+
+  const msg = "no permitted GitHub reviewer approved this PR; high-risk approvals are unverified.";
+  if (cfg.approval.requireVerifiedApproval) violations.push({ package: "(approvals)", reason: msg });
+  else warnings.push(msg);
   return { violations, warnings };
 }

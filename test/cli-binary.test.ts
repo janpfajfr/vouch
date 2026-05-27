@@ -119,3 +119,19 @@ test("approve sets a git-config approver and check then passes", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("check warns (fail-open) when verify is on but no PR context", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { evil: "1" } }));
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ approval: { verify: "github-review", requireVerifiedApproval: false, allowedApprovers: [] } }));
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"),
+      JSON.stringify({ evil: { approvedVersion: "1.0.0", approvedAt: "x", risk: "high", reason: "needed", approvedBy: null, approval: { by: "Jan", via: "git-config", at: "t" }, checks: { ageHours: 1, installScripts: false } } }));
+    const env = { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1", GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_REPOSITORY: "", GITHUB_EVENT_PATH: "" };
+    const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env });
+    assert.match(out, /all dependencies are approved/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -31,6 +31,9 @@ To authorize a high-risk dependency, a human runs `vouch approve <pkg>` (which r
 git identity) — an agent MUST NOT run `approve` on a human's behalf. Authorization is a human
 act; the agent's job is to surface the decision, not to make it.
 
+When `approval.verify` is `github-review`, an agent cannot satisfy authorization at all — only
+a human's PR review counts. The agent's job ends at surfacing the dependency for review.
+
 If `check` reports that a dependency gained a CVE since approval, the agent MUST NOT
 silently re-acknowledge it. Re-approval (`vouch reapprove <pkg> --approved-by "<name>"`)
 records a human's name as authorization and is visible in the committed ledger. The agent

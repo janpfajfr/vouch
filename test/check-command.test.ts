@@ -111,3 +111,45 @@ test("high-risk passes when approved via the new approval record", () => {
   const v = runCheck({ dependencies: { evil: "1" } }, ledger, DEFAULT_CONFIG);
   assert.deepEqual(v, []);
 });
+
+import { verifyApprovals } from "../src/check-command.js";
+import type { ReviewClient } from "../src/review.js";
+
+const reviewClient = (r: string[] | null): ReviewClient => ({ async approvingReviewers() { return r; } });
+const highApproved: Ledger = { evil: { ...base, risk: "high", reason: "needed",
+  approval: { by: "Jan <j@x>", via: "git-config", at: "t" } } };
+const onCfg = (req: boolean, allowed: string[] = []) => ({ ...DEFAULT_CONFIG, approval: { verify: "github-review" as const, requireVerifiedApproval: req, allowedApprovers: allowed } });
+
+test("verifyApprovals: verified reviewer => no violation, no warning", async () => {
+  const r = await verifyApprovals(highApproved, onCfg(false), reviewClient(["alice"]));
+  assert.deepEqual(r.violations, []);
+  assert.deepEqual(r.warnings, []);
+});
+
+test("verifyApprovals: cannot verify (null) => warn, no violation (fail-open)", async () => {
+  const r = await verifyApprovals(highApproved, onCfg(false), reviewClient(null));
+  assert.deepEqual(r.violations, []);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /could not verify/i);
+});
+
+test("verifyApprovals: no permitted reviewer, default => warn only", async () => {
+  const r = await verifyApprovals(highApproved, onCfg(false), reviewClient([]));
+  assert.deepEqual(r.violations, []);
+  assert.equal(r.warnings.length, 1);
+});
+
+test("verifyApprovals: no permitted reviewer + requireVerifiedApproval => violation", async () => {
+  const r = await verifyApprovals(highApproved, onCfg(true), reviewClient([]));
+  assert.ok(r.violations.some((v) => /verified/i.test(v.reason)));
+});
+
+test("verifyApprovals: verify off => no-op", async () => {
+  const r = await verifyApprovals(highApproved, DEFAULT_CONFIG, reviewClient(null));
+  assert.deepEqual(r, { violations: [], warnings: [] });
+});
+
+test("verifyApprovals: no high-risk-approved entries => no-op even when on", async () => {
+  const r = await verifyApprovals({ ok: { ...base, risk: "low" } }, onCfg(true), reviewClient([]));
+  assert.deepEqual(r, { violations: [], warnings: [] });
+});

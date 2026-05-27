@@ -36,3 +36,18 @@ test("throws on malformed JSON", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("approval config defaults to verification off", () => {
+  assert.deepEqual(DEFAULT_CONFIG.approval, { verify: "off", requireVerifiedApproval: false, allowedApprovers: [] });
+});
+
+test("a partial approval block keeps the other approval defaults", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ approval: { verify: "github-review" } }));
+    const cfg = loadConfig(dir);
+    assert.equal(cfg.approval.verify, "github-review");
+    assert.equal(cfg.approval.requireVerifiedApproval, false);
+    assert.deepEqual(cfg.approval.allowedApprovers, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

@@ -8,8 +8,9 @@ import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
-import { runCheckWithCve } from "./check-command.js";
+import { runCheckWithCve, verifyApprovals } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
+import { GitHubReviewClient } from "./review.js";
 import { gitIdentity } from "./identity.js";
 import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
 
@@ -251,7 +252,11 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "check") {
     const cfg = loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
-    const { violations, warnings } = await runCheckWithCve(pkg, readLedger(cwd), cfg, new NpmAdvisoryClient());
+    const ledger = readLedger(cwd);
+    const base = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());
+    const review = await verifyApprovals(ledger, cfg, new GitHubReviewClient());
+    const violations = [...base.violations, ...review.violations];
+    const warnings = [...base.warnings, ...review.warnings];
     for (const w of warnings) console.error(`WARN: ${w}`);
     if (violations.length === 0) { console.log("Dependency review: all dependencies are approved."); return 0; }
     for (const v of violations) console.error(`BLOCKED: ${v.package} — ${v.reason}`);
