@@ -11,7 +11,7 @@ test("fails when a dependency has no ledger entry", () => {
   const v = runCheck({ dependencies: { lodash: "^4" } }, {}, DEFAULT_CONFIG);
   assert.equal(v.length, 1);
   assert.equal(v[0].package, "lodash");
-  assert.match(v[0].reason, /not in the ledger/i);
+  assert.match(v[0].reason, /missing ledger entry/i);
 });
 
 test("passes when every dep is in the ledger", () => {
@@ -72,7 +72,7 @@ test("runCheckWithCve fails open: client null yields a warning, no violation", a
 
 test("runCheckWithCve still reports base violations (missing entry)", async () => {
   const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, {}, DEFAULT_CONFIG, fakeClient({}));
-  assert.ok(r.violations.some((v) => /not in the ledger/i.test(v.reason)));
+  assert.ok(r.violations.some((v) => /missing ledger entry/i.test(v.reason)));
 });
 
 test("runCheckWithCve queries the approved version, not the package.json range", async () => {

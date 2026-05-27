@@ -3,7 +3,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
-import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk } from "./ledger.js";
+import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
@@ -11,7 +11,7 @@ import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type
 import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
 import { gitIdentity } from "./identity.js";
-import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
+import { wordmark, shouldShowWordmark, statusHeader, type OutputOpts } from "./art.js";
 
 export function parseSpec(spec: string): { name: string; version: string | undefined } {
   const at = spec.lastIndexOf("@");
@@ -95,10 +95,6 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   const cfg = loadConfig(opts.cwd);
   const { name, version } = parseSpec(opts.spec);
 
-  for (const alt of findAlternatives(name, existingDeps(opts.cwd), cfg.knownAlternatives)) {
-    opts.log(`note: ${alt.message}`);
-  }
-
   let meta;
   try {
     meta = await opts.registry.fetchMetadata(name, version);
@@ -108,20 +104,25 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     throw e;
   }
 
-  const allowlisted = isAllowlisted(name, cfg.allowScopedPackages);
+  const id = `${name}@${meta.version}`;
+  const o = outputOpts();
+  const notes: string[] = [];
+  for (const alt of findAlternatives(name, existingDeps(opts.cwd), cfg.knownAlternatives)) notes.push(alt.message);
 
   let risk: Risk = "low";
-  let blocked = false;
-  if (allowlisted) {
-    opts.log(`note: "${name}" matches allowScopedPackages; skipping risk gate.`);
+  const blocking: string[] = [];
+  if (isAllowlisted(name, cfg.allowScopedPackages)) {
+    notes.push(`"${name}" matches allowScopedPackages; risk gate skipped.`);
   } else {
     const findings: Finding[] = [
       checkVersionAge(meta.publishedAt, opts.now(), cfg),
       checkInstallScripts(meta.scripts, cfg),
     ];
-    for (const f of findings) if (f.level !== "ok") opts.log(`${f.level.toUpperCase()}: ${f.message}`);
+    for (const f of findings) {
+      if (f.level === "block") blocking.push(f.message);
+      else if (f.level === "warn") notes.push(f.message);
+    }
     risk = overallRisk(findings);
-    blocked = findings.some((f) => f.level === "block");
   }
 
   // Surface known advisories at install time so `check` is never the first messenger.
@@ -131,20 +132,25 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     const found = live?.[name] ?? [];
     if (found.length > 0) {
       const list = found.map((a) => `${a.id} (${a.severity})`).join(", ");
-      opts.log(`WARN: ${name}@${meta.version} has known ${found.length === 1 ? "advisory" : "advisories"}: ${list}.`);
-      opts.log(`note: \`check\` will block until a human acknowledges this — run: vouch acknowledge ${name} --reason "<why>" (or upgrade to a patched version).`);
+      notes.push(`known ${found.length === 1 ? "advisory" : "advisories"}: ${list} — \`check\` will block until acknowledged: vouch acknowledge ${name} --reason "<why>".`);
     }
   }
 
-  if (blocked && !opts.force) {
-    opts.err(blockBanner(outputOpts()));
-    opts.err(`Decision: blocked. Re-run with --force-with-reason "<reason>" to override.`);
+  if (blocking.length > 0 && !opts.force) {
+    opts.err(statusHeader("warn", "Dependency needs review", o));
+    opts.err("");
+    opts.err(`  ${id}`);
+    for (const b of blocking) opts.err(`  - ${b}`);
+    for (const n of notes) opts.err(`  - ${n}`);
+    opts.err("");
+    opts.err("  Next:");
+    opts.err(`    vouch ${opts.spec} --force-with-reason "<why this dependency is needed>"`);
     return 1;
   }
 
   const pm = detectPM(opts.cwd, cfg.packageManager);
   if (cfg.requireCooldownConfigured && !cooldownConfigured(opts.cwd, pm)) {
-    opts.log(`WARN: ${pm} has no release-age cooldown configured.`);
+    notes.push(`${pm} has no release-age cooldown configured.`);
   }
 
   const code = await opts.installer.install(pm, installArgs(pm, opts.spec, opts.dev));
@@ -159,7 +165,11 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     checks: { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts: (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false; })() },
   };
   writeLedger(opts.cwd, upsertEntry(readLedger(opts.cwd), name, entry));
-  opts.log("Decision: allowed.");
+  opts.log(statusHeader("success", "Recorded dependency decision", o));
+  opts.log("");
+  opts.log(`  ${id}`);
+  opts.log(`  Ledger: ${LEDGER_RELATIVE}`);
+  for (const n of notes) opts.log(`  - ${n}`);
   return 0;
 }
 
@@ -211,22 +221,37 @@ function realInstaller(): Installer {
 async function main(argv: string[]): Promise<number> {
   const cwd = process.cwd();
   const o = outputOpts();
-  if (shouldShowWordmark(o)) process.stdout.write(wordmark(o) + "\n");
 
   const args = argv.filter((a) => a !== "--quiet");
   const cmd = args[0];
 
   if (cmd === "--version" || cmd === "-V") { console.log(readVersion()); return 0; }
-  if (cmd === "help" || cmd === "--help" || cmd === "-h") { console.log(helpText()); return 0; }
+  if (cmd === "help" || cmd === "--help" || cmd === "-h") {
+    // The wordmark is the one playful flourish, kept to --help. Normal output stays calm.
+    if (shouldShowWordmark(o)) console.log(wordmark(o) + "\n");
+    console.log(helpText());
+    return 0;
+  }
 
   if (cmd === "check") {
     const cfg = loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
     const ledger = readLedger(cwd);
     const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());
-    for (const w of warnings) console.error(`WARN: ${w}`);
-    if (violations.length === 0) { console.log("Dependency review: all dependencies are recorded."); return 0; }
-    for (const v of violations) console.error(`BLOCKED: ${v.package} — ${v.reason}`);
+    if (violations.length === 0) {
+      console.log(statusHeader("success", "Dependency review passed", o));
+      console.log("");
+      console.log("  All dependencies are recorded.");
+      for (const w of warnings) console.log(`  - ${w}`);
+      return 0;
+    }
+    console.error(statusHeader("blocked", "Dependency review failed", o));
+    console.error("");
+    for (const w of warnings) console.error(`  - ${w}`);
+    for (const v of violations) console.error(`  - ${v.package}: ${v.reason}`);
+    console.error("");
+    console.error("  Next:");
+    console.error("    vouch <package>");
     return 1;
   }
 

@@ -19,7 +19,7 @@ export function runCheck(pkg: PackageJsonLike, ledger: Ledger, _cfg: Config): Ch
   for (const name of names) {
     const entry = ledger[name];
     if (!entry) {
-      violations.push({ package: name, reason: "not in the ledger — record it: vouch " + name });
+      violations.push({ package: name, reason: "missing ledger entry" });
       continue;
     }
     if (entry.risk === "high" && (!entry.reason || entry.reason.trim() === "")) {
