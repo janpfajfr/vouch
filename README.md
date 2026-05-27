@@ -68,6 +68,7 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
 | `vouch <pkg> [-D]` | Review, install, and record a dependency (`-D` for devDependencies). |
 | `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason as attribution. |
 | `vouch check` | CI gate: fail on unreviewed deps, missing approvals, or unacknowledged CVEs. |
+| `vouch approve <pkg> [--approved-by "<name>"]` | Record a human approver for a high-risk dependency (identity auto-derived from `git config`). |
 | `vouch reapprove <pkg> --approved-by "<name>"` | A named human acknowledges a dependency's current advisories. |
 
 Environment: `YSNA_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
@@ -85,6 +86,11 @@ This distinction is the heart of the tool:
   human runs `reapprove`.
 
 You can always force a thing through. You can never do it *invisibly*.
+
+Authorize a high-risk dependency with `vouch approve <pkg>` — it records your identity from
+`git config` (or an explicit `--approved-by "<name>"`), so authorization is a real command,
+not a hand-edited JSON field. (Whether that approval is *verified* — signed commit or
+authenticated PR review — is Phase 2; see the design spec.)
 
 ---
 
