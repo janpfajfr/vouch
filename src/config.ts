@@ -13,7 +13,6 @@ export interface Config {
   requireCooldownConfigured: boolean;
   allowScopedPackages: string[];
   packageManager: PackageManager;
-  knownAlternatives: Record<string, string>;
   versionDrift: CheckMode;
   requirePinned: CheckMode;
 }
@@ -25,7 +24,6 @@ export const DEFAULT_CONFIG: Config = {
   requireCooldownConfigured: false,
   allowScopedPackages: [],
   packageManager: "auto",
-  knownAlternatives: {},
   versionDrift: "warn",
   requirePinned: "off",
 };

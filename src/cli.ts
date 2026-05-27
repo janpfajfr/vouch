@@ -5,7 +5,6 @@ import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
 import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
-import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
@@ -39,7 +38,7 @@ export function helpText(): string {
     "",
     "Usage:",
     '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
-    "  vouch check                                             CI gate: fail on unrecorded deps, unexplained high-risk, or CVE drift",
+    "  vouch check                                             CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift",
     '  vouch acknowledge <package> --reason "<why>"            Knowingly accept a dependency\'s current advisories (CVE drift)',
     "  vouch --help | --version",
     "",
@@ -47,7 +46,7 @@ export function helpText(): string {
     "  -D, --save-dev            Add as a devDependency",
     '  --force-with-reason "…"   Override a block, recording the reason in the ledger',
     '  --reason "<why>"          Why a risk is knowingly accepted (acknowledge)',
-    "  --quiet                   Suppress the wordmark banner",
+    "  --quiet                   Suppress the decorative ✦ vouch status marker",
     "",
     "Environment:",
     "  YSNA_ADVISORY_URL         Override the npm advisory endpoint (enterprise mirrors/proxies)",
@@ -63,15 +62,6 @@ function readVersion(): string {
     return `vouch ${pkg.version}`;
   } catch {
     return "vouch (unknown version)";
-  }
-}
-
-function existingDeps(cwd: string): string[] {
-  try {
-    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
-    return [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})];
-  } catch {
-    return [];
   }
 }
 
@@ -107,7 +97,6 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   const id = `${name}@${meta.version}`;
   const o = outputOpts();
   const notes: string[] = [];
-  for (const alt of findAlternatives(name, existingDeps(opts.cwd), cfg.knownAlternatives)) notes.push(alt.message);
 
   let risk: Risk = "low";
   const blocking: string[] = [];
