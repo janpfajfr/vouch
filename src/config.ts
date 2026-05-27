@@ -3,6 +3,12 @@ import { join } from "node:path";
 
 export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 
+export interface ApprovalConfig {
+  verify: "off" | "github-review";
+  requireVerifiedApproval: boolean;
+  allowedApprovers: string[];
+}
+
 export interface Config {
   minimumVersionAgeHours: number;
   warnVersionAgeHours: number;
@@ -12,6 +18,7 @@ export interface Config {
   allowScopedPackages: string[];
   packageManager: PackageManager;
   knownAlternatives: Record<string, string>;
+  approval: ApprovalConfig;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -23,6 +30,7 @@ export const DEFAULT_CONFIG: Config = {
   allowScopedPackages: [],
   packageManager: "auto",
   knownAlternatives: {},
+  approval: { verify: "off", requireVerifiedApproval: false, allowedApprovers: [] },
 };
 
 export function loadConfig(cwd: string): Config {

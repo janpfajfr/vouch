@@ -36,3 +36,7 @@ test("throws on malformed JSON", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("approval config defaults to verification off", () => {
+  assert.deepEqual(DEFAULT_CONFIG.approval, { verify: "off", requireVerifiedApproval: false, allowedApprovers: [] });
+});
