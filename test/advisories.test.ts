@@ -36,9 +36,9 @@ test("returns empty object for non-object input", () => {
 });
 
 const entry = (version: string, ack: { id: string; severity: "low"|"moderate"|"high"|"critical" }[]) => ({
-  approvedVersion: version, approvedAt: "x", risk: "low" as const, reason: null, approvedBy: null,
+  approvedVersion: version, addedAt: "x", risk: "low" as const, reason: null, addedBy: null,
   checks: { ageHours: 1, installScripts: false as const },
-  cve: { acknowledged: ack, acknowledgedBy: "alice", acknowledgedAt: "x" },
+  cve: { acknowledged: ack, acknowledgedBy: "alice", acknowledgedAt: "x", reason: "accepted" },
 });
 
 test("detectDrift reports advisories not in the acknowledged set", () => {
@@ -55,7 +55,7 @@ test("detectDrift reports nothing when all advisories are acknowledged", () => {
 });
 
 test("detectDrift treats a missing cve field as an empty acknowledged set", () => {
-  const ledger: Ledger = { foo: { approvedVersion: "1", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } };
+  const ledger: Ledger = { foo: { approvedVersion: "1", addedAt: "x", risk: "low", reason: null, addedBy: null, checks: { ageHours: 1, installScripts: false } } };
   const drift = detectDrift(ledger, { foo: [{ id: "GHSA-z", severity: "critical" }] });
   assert.deepEqual(drift[0].newAdvisories, [{ id: "GHSA-z", severity: "critical" }]);
 });
