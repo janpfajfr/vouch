@@ -47,7 +47,7 @@ export function helpText(): string {
     "Flags:",
     "  -D, --save-dev            Add as a devDependency",
     '  --force-with-reason "…"   Override a block, recording the reason (attribution, not authorization)',
-    '  --approved-by "<name>"    Human authorization recorded in the ledger (reapprove)',
+    '  --approved-by "<name>"    Human authorization recorded in the ledger (approve / reapprove)',
     "  --quiet                   Suppress the wordmark banner",
     "",
     "Environment:",
@@ -284,6 +284,8 @@ async function main(argv: string[]): Promise<number> {
   if (parsed.error === "no-package") { console.error(helpText()); return 1; }
   if (parsed.error) { console.error(parsed.error); return 1; }
   const { spec, dev, force } = parsed;
+  // spec is always defined here (the error paths above exhaust the undefined case);
+  // this guard exists only for TypeScript narrowing of AddArgs.spec.
   if (!spec) { console.error(helpText()); return 1; }
 
   return runSafeAdd({

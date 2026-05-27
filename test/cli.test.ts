@@ -63,6 +63,7 @@ test("helpText lists the usage and every command", () => {
   const h = helpText();
   assert.match(h, /Usage:/);
   assert.match(h, /vouch check/);
+  assert.match(h, /vouch approve/);
   assert.match(h, /vouch reapprove/);
   assert.match(h, /--force-with-reason/);
 });
