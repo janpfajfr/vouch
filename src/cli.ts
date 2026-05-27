@@ -3,14 +3,13 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
-import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk, type Approval } from "./ledger.js";
+import { readLedger, writeLedger, upsertEntry, type LedgerEntry, type Risk } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { findAlternatives } from "./alternatives.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
-import { runCheckWithCve, verifyApprovals } from "./check-command.js";
+import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
-import { GitHubReviewClient } from "./review.js";
 import { gitIdentity } from "./identity.js";
 import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
 
@@ -36,25 +35,25 @@ export function parseAddArgs(args: string[]): AddArgs {
 
 export function helpText(): string {
   return [
-    "vouch — a dependency-governance gate that records who vouched for each dependency.",
+    "vouch — a dependency-decision ledger: every dependency is recorded, explained, and reviewable in the PR.",
     "",
     "Usage:",
     '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
-    "  vouch check                                             CI gate: fail on unreviewed deps or unacknowledged CVEs",
-    '  vouch approve <package> [--approved-by "<name>"]        Record a human approver for a high-risk dependency',
-    '  vouch reapprove <package> --approved-by "<name>"        Acknowledge a dependency\'s current advisories',
+    "  vouch check                                             CI gate: fail on unrecorded deps, unexplained high-risk, or CVE drift",
+    '  vouch acknowledge <package> --reason "<why>"            Knowingly accept a dependency\'s current advisories (CVE drift)',
     "  vouch --help | --version",
     "",
     "Flags:",
     "  -D, --save-dev            Add as a devDependency",
-    '  --force-with-reason "…"   Override a block, recording the reason (attribution, not authorization)',
-    '  --approved-by "<name>"    Human authorization recorded in the ledger (approve / reapprove)',
+    '  --force-with-reason "…"   Override a block, recording the reason in the ledger',
+    '  --reason "<why>"          Why a risk is knowingly accepted (acknowledge)',
     "  --quiet                   Suppress the wordmark banner",
     "",
     "Environment:",
     "  YSNA_ADVISORY_URL         Override the npm advisory endpoint (enterprise mirrors/proxies)",
     "",
-    "The approval ledger lives at .security/dependency-approvals.json and is meant to be committed.",
+    "vouch records decisions; the PR/MR review is the approval. The ledger lives at",
+    ".security/dependency-approvals.json and is meant to be committed.",
   ].join("\n");
 }
 
@@ -85,6 +84,7 @@ export interface SafeAddOptions {
   registry: RegistryClient;
   installer: Installer;
   advisoryClient?: AdvisoryClient;
+  identity?: () => string | null;
   now: () => Date;
   cwd: string;
   log: (s: string) => void;
@@ -132,7 +132,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     if (found.length > 0) {
       const list = found.map((a) => `${a.id} (${a.severity})`).join(", ");
       opts.log(`WARN: ${name}@${meta.version} has known ${found.length === 1 ? "advisory" : "advisories"}: ${list}.`);
-      opts.log(`note: \`check\` will block until a human acknowledges this — run: vouch reapprove ${name} --approved-by "<name>" (or upgrade to a patched version).`);
+      opts.log(`note: \`check\` will block until a human acknowledges this — run: vouch acknowledge ${name} --reason "<why>" (or upgrade to a patched version).`);
     }
   }
 
@@ -152,10 +152,10 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
 
   const entry: LedgerEntry = {
     approvedVersion: meta.version,
-    approvedAt: opts.now().toISOString(),
+    addedAt: opts.now().toISOString(),
     risk,
     reason: opts.force ?? null,
-    approvedBy: null,
+    addedBy: (opts.identity ?? (() => gitIdentity()))(),
     checks: { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts: (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false; })() },
   };
   writeLedger(opts.cwd, upsertEntry(readLedger(opts.cwd), name, entry));
@@ -163,9 +163,10 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   return 0;
 }
 
-export interface ReapproveOptions {
+export interface AcknowledgeOptions {
   pkg: string;
-  approvedBy: string;
+  reason: string;
+  identity: () => string | null;
   client: AdvisoryClient;
   now: () => Date;
   cwd: string;
@@ -173,7 +174,7 @@ export interface ReapproveOptions {
   err: (s: string) => void;
 }
 
-export async function runReapprove(opts: ReapproveOptions): Promise<number> {
+export async function runAcknowledge(opts: AcknowledgeOptions): Promise<number> {
   const ledger = readLedger(opts.cwd);
   const entry = ledger[opts.pkg];
   if (!entry) { opts.err(`Not in ledger: ${opts.pkg}`); return 1; }
@@ -185,40 +186,9 @@ export async function runReapprove(opts: ReapproveOptions): Promise<number> {
   }
 
   const acknowledged = live[opts.pkg] ?? [];
-  const updated = { ...entry, cve: { acknowledged, acknowledgedBy: opts.approvedBy, acknowledgedAt: opts.now().toISOString() } };
+  const updated = { ...entry, cve: { acknowledged, acknowledgedBy: opts.identity(), acknowledgedAt: opts.now().toISOString(), reason: opts.reason } };
   writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, updated));
-  opts.log(`Re-approved ${opts.pkg}: acknowledged ${acknowledged.length} advisor${acknowledged.length === 1 ? "y" : "ies"} (by ${opts.approvedBy}).`);
-  return 0;
-}
-
-export interface ApproveOptions {
-  pkg: string;
-  approvedBy: string | null;     // explicit name, or null to auto-derive
-  identity: () => string | null; // injected git identity
-  now: () => Date;
-  cwd: string;
-  log: (s: string) => void;
-  err: (s: string) => void;
-}
-
-export function runApprove(opts: ApproveOptions): number {
-  const ledger = readLedger(opts.cwd);
-  const entry = ledger[opts.pkg];
-  if (!entry) { opts.err(`Not in ledger: ${opts.pkg}. Add it first with: vouch ${opts.pkg}`); return 1; }
-
-  let by: string;
-  let via: Approval["via"];
-  if (opts.approvedBy && opts.approvedBy.trim() !== "") {
-    by = opts.approvedBy.trim(); via = "manual";
-  } else {
-    const id = opts.identity();
-    if (!id) { opts.err('Could not determine your identity from git config. Pass --approved-by "<name>".'); return 1; }
-    by = id; via = "git-config";
-  }
-
-  const approval: Approval = { by, via, at: opts.now().toISOString() };
-  writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, { ...entry, approval }));
-  opts.log(`Approved ${opts.pkg} (by ${by}, via ${via}).`);
+  opts.log(`Acknowledged ${opts.pkg}: ${acknowledged.length} advisor${acknowledged.length === 1 ? "y" : "ies"} accepted — "${opts.reason}".`);
   return 0;
 }
 
@@ -253,36 +223,22 @@ async function main(argv: string[]): Promise<number> {
     const cfg = loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
     const ledger = readLedger(cwd);
-    const base = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());
-    const review = await verifyApprovals(ledger, cfg, new GitHubReviewClient());
-    const violations = [...base.violations, ...review.violations];
-    const warnings = [...base.warnings, ...review.warnings];
+    const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());
     for (const w of warnings) console.error(`WARN: ${w}`);
-    if (violations.length === 0) { console.log("Dependency review: all dependencies are approved."); return 0; }
+    if (violations.length === 0) { console.log("Dependency review: all dependencies are recorded."); return 0; }
     for (const v of violations) console.error(`BLOCKED: ${v.package} — ${v.reason}`);
     return 1;
   }
 
-  if (cmd === "reapprove") {
+  if (cmd === "acknowledge") {
     const rest = args.slice(1);
-    const ai = rest.indexOf("--approved-by");
-    const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : "";
-    const skip = new Set(ai >= 0 ? [ai, ai + 1] : []);
+    const ri = rest.indexOf("--reason");
+    const reason = ri >= 0 ? (rest[ri + 1] ?? "") : "";
+    const skip = new Set(ri >= 0 ? [ri, ri + 1] : []);
     const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
-    if (!pkg) { console.error('Usage: vouch reapprove <package> --approved-by "<name>"'); return 1; }
-    if (approvedBy.trim() === "" || approvedBy.startsWith("-")) { console.error("reapprove requires --approved-by \"<name>\" (authorization, not attribution)."); return 1; }
-    return runReapprove({ pkg, approvedBy, client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
-  }
-
-  if (cmd === "approve") {
-    const rest = args.slice(1);
-    const ai = rest.indexOf("--approved-by");
-    const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : null;
-    const skip = new Set(ai >= 0 ? [ai, ai + 1] : []);
-    const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
-    if (!pkg) { console.error('Usage: vouch approve <package> [--approved-by "<name>"]'); return 1; }
-    if (approvedBy !== null && (approvedBy.trim() === "" || approvedBy.startsWith("-"))) { console.error("--approved-by needs a name value."); return 1; }
-    return runApprove({ pkg, approvedBy, identity: () => gitIdentity(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
+    if (!pkg) { console.error('Usage: vouch acknowledge <package> --reason "<why>"'); return 1; }
+    if (reason.trim() === "" || reason.startsWith("-")) { console.error('acknowledge requires --reason "<why>" — the risk you are knowingly accepting.'); return 1; }
+    return runAcknowledge({ pkg, reason, identity: () => gitIdentity(), client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
 
   const parsed = parseAddArgs(args);
@@ -298,6 +254,7 @@ async function main(argv: string[]): Promise<number> {
     registry: new NpmRegistryClient(),
     installer: realInstaller(),
     advisoryClient: new NpmAdvisoryClient(),
+    identity: () => gitIdentity(),
     now: () => new Date(),
     cwd,
     log: (s) => console.log(s),
