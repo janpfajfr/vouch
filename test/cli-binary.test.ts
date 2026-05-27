@@ -26,7 +26,7 @@ test("check exits 0 when ledger covers deps", () => {
     mkdirSync(join(dir, ".security"), { recursive: true });
     writeFileSync(join(dir, ".security", "dependency-approvals.json"), lowEntry);
     const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } });
-    assert.match(out, /all dependencies are recorded/);
+    assert.match(out, /All dependencies are recorded/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -40,7 +40,7 @@ test("high-risk with a reason passes check (no separate approval step)", () => {
     writeFileSync(join(dir, ".security", "dependency-approvals.json"),
       JSON.stringify({ evil: { approvedVersion: "1.0.0", addedAt: "x", risk: "high", reason: "needed", addedBy: null, checks: { ageHours: 1, installScripts: false } } }));
     const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } });
-    assert.match(out, /all dependencies are recorded/);
+    assert.match(out, /All dependencies are recorded/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

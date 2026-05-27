@@ -33,18 +33,6 @@ export function wordmark(opts: OutputOpts): string {
   return color(WORDMARK_TEXT, CYAN, opts);
 }
 
-const REVIEW_REQUIRED = [
-  "          ╔═[ VOUCH CHECK ]════════════╗",
-  "          ║  DEPENDENCY NEEDS REVIEW   ║",
-  "          ║                            ║",
-  "          ║  see reasons below ↓       ║",
-  "          ╚════════════════════════════╝",
-].join("\n");
-
-export function blockBanner(opts: OutputOpts): string {
-  return color(REVIEW_REQUIRED, YELLOW, opts);
-}
-
 export function success(s: string, opts: OutputOpts): string {
   return color(s, GREEN, opts);
 }

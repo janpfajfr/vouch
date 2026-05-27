@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shouldShowWordmark, wordmark, blockBanner } from "../src/art.js";
+import { shouldShowWordmark, wordmark, success } from "../src/art.js";
 
 test("wordmark hidden when not a TTY", () => {
   assert.equal(shouldShowWordmark({ isTTY: false, noColor: false, quiet: false }), false);
@@ -14,15 +14,12 @@ test("wordmark shown on interactive terminal", () => {
 test("wordmark returns non-empty string text", () => {
   assert.ok(wordmark({ isTTY: true, noColor: true, quiet: false }).length > 0);
 });
-test("block banner always returns the catchphrase, even non-TTY", () => {
-  const b = blockBanner({ isTTY: false, noColor: true, quiet: true });
-  assert.match(b, /REVIEW/i);
+test("colored text is plain when noColor is set", () => {
+  assert.doesNotMatch(success("done", { isTTY: true, noColor: true, quiet: false }), /\x1b\[/);
 });
-test("no ANSI escape codes when noColor is set", () => {
-  const b = blockBanner({ isTTY: true, noColor: true, quiet: false });
-  assert.doesNotMatch(b, /\x1b\[/);
+test("colored text carries ANSI when color is allowed on a TTY", () => {
+  assert.match(success("done", { isTTY: true, noColor: false, quiet: false }), /\x1b\[/);
 });
-test("ANSI escape codes present when color allowed on TTY", () => {
-  const b = blockBanner({ isTTY: true, noColor: false, quiet: false });
-  assert.match(b, /\x1b\[/);
+test("colored text is plain (no ANSI) when not a TTY — calm output in pipes/CI", () => {
+  assert.doesNotMatch(success("done", { isTTY: false, noColor: false, quiet: false }), /\x1b\[/);
 });
