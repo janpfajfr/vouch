@@ -19,8 +19,7 @@ const fixture = {
 test("normalizes latest version", () => {
   const m = normalizeMetadata("lodash", undefined, fixture);
   assert.equal(m.version, "4.17.21");
-  assert.equal(m.hasRepository, true);
-  assert.equal(m.hasLicense, true);
+  assert.equal(m.deprecated, false);
   assert.deepEqual(m.scripts, { test: "echo" });
   assert.ok(m.publishedAt instanceof Date);
 });

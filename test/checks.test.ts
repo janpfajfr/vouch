@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkVersionAge, checkInstallScripts, overallRisk, DANGEROUS_SCRIPTS } from "../src/checks.js";
+import { checkVersionAge, checkInstallScripts, checkDeprecated, overallRisk, DANGEROUS_SCRIPTS } from "../src/checks.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 
 const now = new Date("2026-05-23T00:00:00Z");
@@ -30,6 +30,12 @@ test("install script blocks when blockInstallScripts true", () => {
   const f = checkInstallScripts({ postinstall: "node x.js" }, DEFAULT_CONFIG);
   assert.equal(f.level, "block");
   assert.match(f.message, /postinstall/);
+});
+
+test("checkDeprecated warns for a deprecated package, ok otherwise", () => {
+  assert.equal(checkDeprecated(true).level, "warn");
+  assert.match(checkDeprecated(true).message, /deprecated/i);
+  assert.equal(checkDeprecated(false).level, "ok");
 });
 
 test("non-lifecycle scripts are ignored", () => {
