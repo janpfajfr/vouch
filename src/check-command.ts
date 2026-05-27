@@ -1,5 +1,5 @@
 import type { Config } from "./config.js";
-import type { Ledger } from "./ledger.js";
+import { approverOf, type Ledger } from "./ledger.js";
 import { detectDrift, type AdvisoryClient } from "./advisories.js";
 
 export interface PackageJsonLike {
@@ -25,8 +25,8 @@ export function runCheck(pkg: PackageJsonLike, ledger: Ledger, cfg: Config): Che
       if (!entry.reason || entry.reason.trim() === "") {
         violations.push({ package: name, reason: "high-risk entry missing a reason." });
       }
-      if (cfg.requireApprovalForHighRisk && (!entry.approvedBy || entry.approvedBy.trim() === "")) {
-        violations.push({ package: name, reason: "high-risk entry needs approvedBy (a reason alone does not authorize)." });
+      if (cfg.requireApprovalForHighRisk && !approverOf(entry)) {
+        violations.push({ package: name, reason: "high-risk entry needs a human approver (run: vouch approve " + name + ")." });
       }
     }
   }

@@ -104,3 +104,10 @@ test("runCheckWithCve checks devDependencies too", async () => {
     fakeClient({ typescript: [{ id: "GHSA-new", severity: "high" }] }));
   assert.ok(r.violations.some((v) => v.package === "typescript" && /reapprove/i.test(v.reason)));
 });
+
+test("high-risk passes when approved via the new approval record", () => {
+  const ledger: Ledger = { evil: { ...base, risk: "high", reason: "needed", approvedBy: null,
+    approval: { by: "Jan <j@x>", via: "git-config", at: "t" } } };
+  const v = runCheck({ dependencies: { evil: "1" } }, ledger, DEFAULT_CONFIG);
+  assert.deepEqual(v, []);
+});
