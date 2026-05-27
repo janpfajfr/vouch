@@ -89,8 +89,22 @@ You can always force a thing through. You can never do it *invisibly*.
 
 Authorize a high-risk dependency with `vouch approve <pkg>` — it records your identity from
 `git config` (or an explicit `--approved-by "<name>"`), so authorization is a real command,
-not a hand-edited JSON field. (Whether that approval is *verified* — signed commit or
-authenticated PR review — is Phase 2; see the design spec.)
+not a hand-edited JSON field. To *verify* that approval against a real GitHub PR review, see
+**Verified approval** below.
+
+## Verified approval (optional)
+
+By default `vouch` *records* who approved a dependency. To *verify* it, set in `.safe-dep.json`:
+
+    { "approval": { "verify": "github-review", "requireVerifiedApproval": false, "allowedApprovers": [] } }
+
+In CI on a pull request, `vouch check` then confirms the PR has an approving review from a
+permitted human (write access; restrict to specific logins with `allowedApprovers`). It is
+**fail-open**: with no PR context or token it warns but does not fail (reviews usually land
+after CI). Set `requireVerifiedApproval: true` to make a confirmed *un*reviewed high-risk
+approval fail the build. Verification is live at check time and never written to the ledger;
+the workflow must run on `pull_request` and pass `GITHUB_TOKEN` (see
+`examples/github-actions-verify.yml`).
 
 ---
 
