@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import type { Ledger } from "./ledger.js";
 import { detectDrift, type AdvisoryClient } from "./advisories.js";
+import { satisfiesRange } from "./semver.js";
 
 export interface PackageJsonLike {
   dependencies?: Record<string, string>;
@@ -28,6 +29,28 @@ export function runCheck(pkg: PackageJsonLike, ledger: Ledger, _cfg: Config): Ch
   return violations;
 }
 
+export interface VersionDrift { package: string; recorded: string; range: string; }
+
+/** Direct deps whose recorded version no longer satisfies the package.json range.
+ *  Compares against package.json ranges only (no lockfile). Unparseable ranges are
+ *  skipped (satisfiesRange returns null) so they never produce a false drift. */
+export function detectVersionDrift(pkg: PackageJsonLike, ledger: Ledger): VersionDrift[] {
+  const ranges = { ...pkg.dependencies, ...pkg.devDependencies };
+  const drift: VersionDrift[] = [];
+  for (const [name, range] of Object.entries(ranges)) {
+    const entry = ledger[name];
+    if (!entry) continue; // unrecorded is already a violation in runCheck
+    if (satisfiesRange(entry.approvedVersion, range) === false) {
+      drift.push({ package: name, recorded: entry.approvedVersion, range });
+    }
+  }
+  return drift;
+}
+
+export function versionDriftMessage(d: VersionDrift): string {
+  return `recorded at ${d.recorded}, but package.json now requires "${d.range}" — re-record the version a human reviewed: vouch ${d.package}@${d.recorded} (or vouch ${d.package} for the latest).`;
+}
+
 export async function runCheckWithCve(
   pkg: PackageJsonLike,
   ledger: Ledger,
@@ -36,6 +59,14 @@ export async function runCheckWithCve(
 ): Promise<{ violations: CheckViolation[]; warnings: string[] }> {
   const violations = runCheck(pkg, ledger, cfg);
   const warnings: string[] = [];
+
+  if (cfg.versionDrift !== "off") {
+    for (const d of detectVersionDrift(pkg, ledger)) {
+      const msg = `${d.package} — ${versionDriftMessage(d)}`;
+      if (cfg.versionDrift === "block") violations.push({ package: d.package, reason: versionDriftMessage(d) });
+      else warnings.push(msg);
+    }
+  }
 
   const names = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})];
   const pkgVersions: Record<string, string[]> = {};

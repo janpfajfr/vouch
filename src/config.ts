@@ -3,6 +3,9 @@ import { join } from "node:path";
 
 export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 
+/** What `check` does when a recorded version no longer satisfies the package.json range. */
+export type VersionDriftMode = "warn" | "block" | "off";
+
 export interface Config {
   minimumVersionAgeHours: number;
   warnVersionAgeHours: number;
@@ -11,6 +14,7 @@ export interface Config {
   allowScopedPackages: string[];
   packageManager: PackageManager;
   knownAlternatives: Record<string, string>;
+  versionDrift: VersionDriftMode;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -21,6 +25,7 @@ export const DEFAULT_CONFIG: Config = {
   allowScopedPackages: [],
   packageManager: "auto",
   knownAlternatives: {},
+  versionDrift: "warn",
 };
 
 export function loadConfig(cwd: string): Config {

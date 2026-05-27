@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runCheck, runCheckWithCve } from "../src/check-command.js";
+import { runCheck, runCheckWithCve, detectVersionDrift } from "../src/check-command.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 import type { Ledger } from "../src/ledger.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
@@ -88,6 +88,48 @@ test("runCheckWithCve checks devDependencies too", async () => {
   const r = await runCheckWithCve({ devDependencies: { typescript: "^5" } }, ledger, DEFAULT_CONFIG,
     fakeClient({ typescript: [{ id: "GHSA-new", severity: "high" }] }));
   assert.ok(r.violations.some((v) => v.package.startsWith("typescript") && /acknowledge/i.test(v.reason)));
+});
+
+const lowAt = (v: string) => ({ ...base, approvedVersion: v, risk: "low" as const });
+
+test("detectVersionDrift flags a recorded version that no longer satisfies the range", () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const d = detectVersionDrift({ dependencies: { lodash: "^3.0.0" } }, ledger);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].package, "lodash");
+  assert.equal(d[0].recorded, "4.18.1");
+});
+
+test("detectVersionDrift is silent when the recorded version still satisfies the range", () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  assert.deepEqual(detectVersionDrift({ dependencies: { lodash: "^4.0.0" } }, ledger), []);
+});
+
+test("detectVersionDrift skips unrecorded deps and unparseable ranges", () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  assert.deepEqual(detectVersionDrift({ dependencies: { lodash: "next", missing: "^1.0.0" } }, ledger), []);
+});
+
+test("runCheckWithCve: version drift warns by default, no violation", async () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^3.0.0" } }, ledger, DEFAULT_CONFIG, fakeClient({}));
+  assert.deepEqual(r.violations, []);
+  assert.ok(r.warnings.some((w) => /lodash.*re-record/i.test(w)));
+});
+
+test("runCheckWithCve: version drift blocks when configured", async () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const cfg = { ...DEFAULT_CONFIG, versionDrift: "block" as const };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^3.0.0" } }, ledger, cfg, fakeClient({}));
+  assert.ok(r.violations.some((v) => v.package === "lodash" && /re-record/i.test(v.reason)));
+});
+
+test("runCheckWithCve: versionDrift off suppresses the warning", async () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const cfg = { ...DEFAULT_CONFIG, versionDrift: "off" as const };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^3.0.0" } }, ledger, cfg, fakeClient({}));
+  assert.deepEqual(r.violations, []);
+  assert.equal(r.warnings.length, 0);
 });
 
 test("CVE drift message lists fix / remove / acknowledge options", async () => {
