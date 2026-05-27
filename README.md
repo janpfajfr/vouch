@@ -1,6 +1,6 @@
 # vouch
 
-![banner](assets/banner.svg)
+![banner](assets/banner.png)
 
 A **dependency-governance gate** for Node.js projects and coding agents.
 
