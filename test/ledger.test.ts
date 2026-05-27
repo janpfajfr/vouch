@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readLedger, writeLedger, upsertEntry, approverOf, type LedgerEntry } from "../src/ledger.js";
+import { readLedger, writeLedger, upsertEntry, type LedgerEntry } from "../src/ledger.js";
 
 const entry: LedgerEntry = {
   approvedVersion: "4.17.21",
-  approvedAt: "2026-05-23T10:00:00Z",
+  addedAt: "2026-05-23T10:00:00Z",
   risk: "low",
   reason: null,
-  approvedBy: null,
+  addedBy: null,
   checks: { ageHours: 900, installScripts: false },
 };
 
@@ -51,20 +51,20 @@ test("readLedger throws on malformed file", () => {
   }
 });
 
-const base: LedgerEntry = {
-  approvedVersion: "1.0.0", approvedAt: "x", risk: "high", reason: "r",
-  approvedBy: null, checks: { ageHours: 1, installScripts: false },
-};
-
-test("approverOf prefers the new approval record", () => {
-  assert.equal(approverOf({ ...base, approval: { by: "Jan <j@x>", via: "git-config", at: "t" } }), "Jan <j@x>");
-});
-
-test("approverOf falls back to the legacy approvedBy", () => {
-  assert.equal(approverOf({ ...base, approvedBy: "Alice" }), "Alice");
-});
-
-test("approverOf returns null when neither is set or is blank", () => {
-  assert.equal(approverOf(base), null);
-  assert.equal(approverOf({ ...base, approvedBy: "   " }), null);
+test("round-trips an entry using addedBy/addedAt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "vouch-ledger-"));
+  try {
+    const e: LedgerEntry = {
+      approvedVersion: "1.0.0",
+      addedAt: "2026-05-27T10:00:00.000Z",
+      addedBy: "Jan Pfajfr <jan@example.com>",
+      risk: "high",
+      reason: "needed for bundling",
+      checks: { ageHours: 100, installScripts: false },
+    };
+    writeLedger(dir, { esbuild: e });
+    assert.deepEqual(readLedger(dir).esbuild, e);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
