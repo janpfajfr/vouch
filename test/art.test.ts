@@ -1,6 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shouldShowWordmark, wordmark, success } from "../src/art.js";
+import { shouldShowWordmark, wordmark, success, statusHeader } from "../src/art.js";
+
+test("statusHeader uses the ✦ vouch prefix and contains the message", () => {
+  const h = statusHeader("success", "Recorded dependency decision", { isTTY: true, noColor: true, quiet: false });
+  assert.match(h, /✦ vouch/);
+  assert.match(h, /Recorded dependency decision/);
+});
+test("statusHeader is plain (no ANSI) when noColor is set", () => {
+  assert.doesNotMatch(statusHeader("blocked", "x", { isTTY: true, noColor: true, quiet: false }), /\x1b\[/);
+});
+test("statusHeader is plain (no ANSI) when not a TTY", () => {
+  assert.doesNotMatch(statusHeader("warn", "x", { isTTY: false, noColor: false, quiet: false }), /\x1b\[/);
+});
+test("statusHeader carries ANSI when color allowed on a TTY", () => {
+  assert.match(statusHeader("success", "x", { isTTY: true, noColor: false, quiet: false }), /\x1b\[/);
+});
+test("--quiet drops the decorative prefix, keeps the message", () => {
+  const h = statusHeader("success", "Dependency review passed", { isTTY: true, noColor: true, quiet: true });
+  assert.doesNotMatch(h, /✦ vouch/);
+  assert.equal(h, "Dependency review passed");
+});
 
 test("wordmark hidden when not a TTY", () => {
   assert.equal(shouldShowWordmark({ isTTY: false, noColor: false, quiet: false }), false);

@@ -25,7 +25,7 @@ export function checkInstallScripts(scripts: Record<string, string>, cfg: Config
   const found = DANGEROUS_SCRIPTS.filter((s) => scripts[s]);
   if (found.length === 0) return { level: "ok", message: "No install-time scripts." };
   const level: Severity = cfg.blockInstallScripts ? "block" : "warn";
-  return { level, message: `Package has install-time scripts: ${found.join(", ")}.` };
+  return { level, message: `install-time script${found.length > 1 ? "s" : ""} detected: ${found.join(", ")}` };
 }
 
 export function overallRisk(findings: Finding[]): Risk {

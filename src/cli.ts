@@ -11,7 +11,7 @@ import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type
 import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
 import { gitIdentity } from "./identity.js";
-import { wordmark, shouldShowWordmark, success, warn, blocked, type OutputOpts } from "./art.js";
+import { wordmark, shouldShowWordmark, statusHeader, type OutputOpts } from "./art.js";
 
 export function parseSpec(spec: string): { name: string; version: string | undefined } {
   const at = spec.lastIndexOf("@");
@@ -137,15 +137,14 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   }
 
   if (blocking.length > 0 && !opts.force) {
-    for (const n of notes) opts.err(`- ${n}`);
-    if (notes.length > 0) opts.err("");
-    opts.err(warn("Dependency needs review", o));
+    opts.err(statusHeader("warn", "Dependency needs review", o));
     opts.err("");
-    opts.err(id);
-    for (const b of blocking) opts.err(`- ${b}`);
+    opts.err(`  ${id}`);
+    for (const b of blocking) opts.err(`  - ${b}`);
+    for (const n of notes) opts.err(`  - ${n}`);
     opts.err("");
-    opts.err("Next:");
-    opts.err(`  vouch ${opts.spec} --force-with-reason "<why this dependency is needed>"`);
+    opts.err("  Next:");
+    opts.err(`    vouch ${opts.spec} --force-with-reason "<why this dependency is needed>"`);
     return 1;
   }
 
@@ -166,12 +165,11 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     checks: { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts: (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false; })() },
   };
   writeLedger(opts.cwd, upsertEntry(readLedger(opts.cwd), name, entry));
-  for (const n of notes) opts.log(`- ${n}`);
-  if (notes.length > 0) opts.log("");
-  opts.log(success("Recorded dependency decision", o));
+  opts.log(statusHeader("success", "Recorded dependency decision", o));
   opts.log("");
-  opts.log(id);
-  opts.log(`Ledger: ${LEDGER_RELATIVE}`);
+  opts.log(`  ${id}`);
+  opts.log(`  Ledger: ${LEDGER_RELATIVE}`);
+  for (const n of notes) opts.log(`  - ${n}`);
   return 0;
 }
 
@@ -240,18 +238,20 @@ async function main(argv: string[]): Promise<number> {
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
     const ledger = readLedger(cwd);
     const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());
-    for (const w of warnings) console.error(`- ${w}`);
     if (violations.length === 0) {
-      console.log(success("Dependency review passed", o));
-      console.log("All dependencies are recorded.");
+      console.log(statusHeader("success", "Dependency review passed", o));
+      console.log("");
+      console.log("  All dependencies are recorded.");
+      for (const w of warnings) console.log(`  - ${w}`);
       return 0;
     }
-    console.error(blocked("Dependency review failed", o));
+    console.error(statusHeader("blocked", "Dependency review failed", o));
     console.error("");
-    for (const v of violations) console.error(`- ${v.package}: ${v.reason}`);
+    for (const w of warnings) console.error(`  - ${w}`);
+    for (const v of violations) console.error(`  - ${v.package}: ${v.reason}`);
     console.error("");
-    console.error("Next:");
-    console.error("  Run vouch <package> for each missing or changed dependency.");
+    console.error("  Next:");
+    console.error("    vouch <package>");
     return 1;
   }
 
