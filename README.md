@@ -58,6 +58,13 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
   added without `vouch`.
 - Fails if a dependency **gained a CVE** that no human has acknowledged.
 - Fails if a **high-risk** entry has no `reason` recorded — so the reviewer can judge it in the PR.
+- **Version drift:** when a recorded version no longer satisfies the `package.json` range, a
+  decision was made for a version you no longer ship. Default `versionDrift: "warn"` surfaces it
+  without failing; set `"block"` to fail CI, or `"off"` to disable. Direct deps only; compared
+  against the `package.json` range (no lockfile). Re-record with `vouch <pkg>`.
+- **Pinning (opt-in):** `requirePinned` warns (`"warn"`) or fails (`"block"`) when a recorded
+  dep uses a range (`^`, `~`, …) instead of an exact version, suggesting the recorded version
+  to pin to. Default `"off"` — turn it on for repos that want exact pins.
 
 ---
 
@@ -120,6 +127,8 @@ All optional; sensible defaults apply.
   "warnVersionAgeHours": 168,
   "blockInstallScripts": true,
   "requireCooldownConfigured": false,
+  "versionDrift": "warn",
+  "requirePinned": "off",
   "allowScopedPackages": ["@your-org/*"],
   "packageManager": "auto",
   "knownAlternatives": { "moment": "Prefer date-fns or the Intl APIs." }
