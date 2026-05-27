@@ -10,6 +10,7 @@ import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
+import { gitIdentity } from "./identity.js";
 import { wordmark, blockBanner, shouldShowWordmark, type OutputOpts } from "./art.js";
 
 export function parseSpec(spec: string): { name: string; version: string | undefined } {
@@ -39,6 +40,7 @@ export function helpText(): string {
     "Usage:",
     '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
     "  vouch check                                             CI gate: fail on unreviewed deps or unacknowledged CVEs",
+    '  vouch approve <package> [--approved-by "<name>"]        Record a human approver for a high-risk dependency',
     '  vouch reapprove <package> --approved-by "<name>"        Acknowledge a dependency\'s current advisories',
     "  vouch --help | --version",
     "",
@@ -267,13 +269,22 @@ async function main(argv: string[]): Promise<number> {
     return runReapprove({ pkg, approvedBy, client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
 
-  const positionals = args.filter((a) => !a.startsWith("-"));
-  const dev = args.includes("-D") || args.includes("--save-dev");
-  const fi = args.indexOf("--force-with-reason");
-  const force = fi >= 0 ? (args[fi + 1] ?? "") : null;
-  const spec = positionals[0];
+  if (cmd === "approve") {
+    const rest = args.slice(1);
+    const ai = rest.indexOf("--approved-by");
+    const approvedBy = ai >= 0 ? (rest[ai + 1] ?? "") : null;
+    const skip = new Set(ai >= 0 ? [ai, ai + 1] : []);
+    const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
+    if (!pkg) { console.error('Usage: vouch approve <package> [--approved-by "<name>"]'); return 1; }
+    if (approvedBy !== null && (approvedBy.trim() === "" || approvedBy.startsWith("-"))) { console.error("--approved-by needs a name value."); return 1; }
+    return runApprove({ pkg, approvedBy, identity: () => gitIdentity(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
+  }
+
+  const parsed = parseAddArgs(args);
+  if (parsed.error === "no-package") { console.error(helpText()); return 1; }
+  if (parsed.error) { console.error(parsed.error); return 1; }
+  const { spec, dev, force } = parsed;
   if (!spec) { console.error(helpText()); return 1; }
-  if (force !== null && force.trim() === "") { console.error("--force-with-reason requires a non-empty reason."); return 1; }
 
   return runSafeAdd({
     spec, dev, force,
