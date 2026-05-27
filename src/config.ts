@@ -47,7 +47,8 @@ export function loadConfig(cwd: string): Config {
   } catch {
     throw new Error(`Invalid .safe-dep.json: not valid JSON`);
   }
-  return { ...DEFAULT_CONFIG, ...parsed };
+  // Deep-merge the nested approval block so a partial override keeps the other defaults.
+  return { ...DEFAULT_CONFIG, ...parsed, approval: { ...DEFAULT_CONFIG.approval, ...(parsed.approval ?? {}) } };
 }
 
 /** True if `name` matches any glob pattern in `patterns` (only `*` is special). */

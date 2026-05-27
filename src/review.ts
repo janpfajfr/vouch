@@ -17,6 +17,20 @@ export function permittedApprover(reviewers: string[], allowedApprovers: string[
 
 const WRITE_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
+interface RawReview { state?: string; user?: { login?: string }; author_association?: string }
+
+/** Logins whose *latest* review is an APPROVAL from a write-association user.
+ *  A later CHANGES_REQUESTED/DISMISSED supersedes an earlier APPROVED.
+ *  (Assumes reviews in chronological order, as the GitHub API returns them.) */
+export function approversFromReviews(reviews: RawReview[]): string[] {
+  const latest = new Map<string, { state: string; assoc: string }>();
+  for (const r of reviews) {
+    if (!r.user?.login || !r.state) continue;
+    latest.set(r.user.login, { state: r.state, assoc: r.author_association ?? "" });
+  }
+  return [...latest].filter(([, v]) => v.state === "APPROVED" && WRITE_ASSOCIATIONS.has(v.assoc)).map(([login]) => login);
+}
+
 interface PrContext { owner: string; repo: string; number: number; token: string; api: string; }
 
 function prContext(): PrContext | null {
@@ -43,14 +57,10 @@ export class GitHubReviewClient implements ReviewClient {
         headers: { authorization: `Bearer ${ctx.token}`, accept: "application/vnd.github+json", "user-agent": "vouch" },
       });
       if (!res.ok) return null;
-      const reviews = (await res.json()) as Array<{ state?: string; user?: { login?: string }; author_association?: string }>;
-      const approvers = new Set<string>();
-      for (const r of reviews) {
-        if (r.state === "APPROVED" && r.user?.login && WRITE_ASSOCIATIONS.has(r.author_association ?? "")) {
-          approvers.add(r.user.login);
-        }
-      }
-      return [...approvers];
+      // per_page=100 without pagination: a PR with >100 review events would truncate.
+      // Acceptable for v1; revisit with Link-header following if it ever bites.
+      const reviews = (await res.json()) as RawReview[];
+      return approversFromReviews(reviews);
     } catch {
       return null;
     }
