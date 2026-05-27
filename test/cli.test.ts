@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec, runReapprove, helpText, parseAddArgs, runApprove } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runAcknowledge, helpText, parseAddArgs } from "../src/cli.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
@@ -22,6 +22,8 @@ function setup() {
   return dir;
 }
 
+const noIdentity = () => null;
+
 test("registry unavailable fails closed: no install, no ledger, exit 1", async () => {
   const dir = setup();
   try {
@@ -30,6 +32,7 @@ test("registry unavailable fails closed: no install, no ledger, exit 1", async (
       spec: "lodash", dev: false, force: null,
       registry: { async fetchMetadata() { throw new RegistryUnavailableError("down"); } },
       installer: { async install() { installed = true; return 0; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 1);
@@ -49,6 +52,7 @@ test("allowlisted scoped package skips the gate even with install scripts", asyn
       spec: "@acme/widget", dev: false, force: null,
       registry: fakeRegistry({ scripts: { postinstall: "x" } }),
       installer: { async install() { return 0; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
@@ -59,12 +63,13 @@ test("allowlisted scoped package skips the gate even with install scripts", asyn
   }
 });
 
-test("helpText lists the usage and every command", () => {
+test("helpText lists the usage and the foundation command set", () => {
   const h = helpText();
   assert.match(h, /Usage:/);
   assert.match(h, /vouch check/);
-  assert.match(h, /vouch approve/);
-  assert.match(h, /vouch reapprove/);
+  assert.match(h, /vouch acknowledge/);
+  assert.doesNotMatch(h, /vouch approve/);
+  assert.doesNotMatch(h, /reapprove/);
   assert.match(h, /--force-with-reason/);
 });
 
@@ -75,6 +80,22 @@ test("parseSpec handles plain, versioned, and scoped names", () => {
   assert.deepEqual(parseSpec("@scope/pkg@1.2.3"), { name: "@scope/pkg", version: "1.2.3" });
 });
 
+test("runSafeAdd records addedBy from the injected git identity", async () => {
+  const dir = setup();
+  try {
+    await runSafeAdd({
+      spec: "ms", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      identity: () => "Jan Pfajfr <jan@example.com>",
+      now: () => new Date("2026-05-27T10:00:00Z"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(readLedger(dir).ms.addedBy, "Jan Pfajfr <jan@example.com>");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("safe (old, no scripts) package installs and writes ledger", async () => {
   const dir = setup();
   try {
@@ -83,6 +104,7 @@ test("safe (old, no scripts) package installs and writes ledger", async () => {
       spec: "lodash", dev: false, force: null,
       registry: fakeRegistry({}),
       installer: { async install(_pm, args) { calls.push(args); return 0; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
@@ -103,6 +125,7 @@ test("blocked package (install script) does NOT install or write ledger, exits 1
       spec: "evil", dev: false, force: null,
       registry: fakeRegistry({ scripts: { postinstall: "x" } }),
       installer: { async install() { installed = true; return 0; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 1);
@@ -120,13 +143,14 @@ test("--force-with-reason allows a blocked package and records high risk + reaso
       spec: "evil", dev: false, force: "needed for bugfix",
       registry: fakeRegistry({ scripts: { postinstall: "x" } }),
       installer: { async install() { return 0; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
     const e = readLedger(dir).evil;
     assert.equal(e.risk, "high");
     assert.equal(e.reason, "needed for bugfix");
-    assert.equal(e.approvedBy, null);
+    assert.equal(e.addedBy, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -139,6 +163,7 @@ test("ledger is NOT written when install fails", async () => {
       spec: "lodash", dev: false, force: null,
       registry: fakeRegistry({}),
       installer: { async install() { return 7; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 7);
@@ -148,7 +173,7 @@ test("ledger is NOT written when install fails", async () => {
   }
 });
 
-test("vouch warns about a CVE on the installed version and points to reapprove, without acknowledging it", async () => {
+test("vouch warns about a CVE on the installed version and points to acknowledge, without acknowledging it", async () => {
   const dir = setup();
   try {
     const logs: string[] = [];
@@ -157,11 +182,12 @@ test("vouch warns about a CVE on the installed version and points to reapprove, 
       registry: fakeRegistry({}),
       installer: { async install() { return 0; } },
       advisoryClient: { async fetchBulk() { return { lodash: [{ id: "GHSA-x", severity: "high" }] }; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: (s) => logs.push(s), err: () => {},
     });
     assert.equal(code, 0);
     assert.ok(logs.some((s) => /GHSA-x/.test(s)), "names the advisory");
-    assert.ok(logs.some((s) => /reapprove/.test(s)), "points to reapprove");
+    assert.ok(logs.some((s) => /acknowledge/.test(s)), "points to acknowledge");
     assert.equal(readLedger(dir).lodash.cve, undefined); // never silently acknowledged
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -177,6 +203,7 @@ test("vouch fails open when the advisory service is unavailable", async () => {
       registry: fakeRegistry({}),
       installer: { async install() { return 0; } },
       advisoryClient: { async fetchBulk() { return null; } },
+      identity: noIdentity,
       now: () => new Date("2026-05-23"), cwd: dir, log: (s) => logs.push(s), err: () => {},
     });
     assert.equal(code, 0);
@@ -187,40 +214,43 @@ test("vouch fails open when the advisory service is unavailable", async () => {
   }
 });
 
-const reapproveClient = (data: Record<string, Advisory[]> | null): AdvisoryClient => ({ async fetchBulk() { return data; } });
+const ackClient = (data: Record<string, Advisory[]> | null): AdvisoryClient => ({ async fetchBulk() { return data; } });
 
 function seedLedger(entry: object): string {
   const cwd = mkdtempSync(join(tmpdir(), "ysna-"));
   mkdirSync(join(cwd, ".security"));
   writeFileSync(join(cwd, ".security", "dependency-approvals.json"),
-    JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false }, ...entry } }, null, 2));
+    JSON.stringify({ lodash: { approvedVersion: "4.17.21", addedAt: "x", risk: "low", reason: null, addedBy: null, checks: { ageHours: 1, installScripts: false }, ...entry } }, null, 2));
   return cwd;
 }
 
-test("runReapprove records the live advisory set and acknowledgedBy", async () => {
+test("runAcknowledge requires a reason and records git identity + advisories", async () => {
   const cwd = seedLedger({});
   try {
     const log: string[] = [];
-    const code = await runReapprove({
-      pkg: "lodash", approvedBy: "alice", client: reapproveClient({ lodash: [{ id: "GHSA-new", severity: "high" }] }),
-      cwd, now: () => new Date("2026-05-26T00:00:00Z"), log: (s) => log.push(s), err: () => {},
+    const code = await runAcknowledge({
+      pkg: "lodash", reason: "dev-only, path unreachable",
+      identity: () => "Jan Pfajfr <jan@example.com>",
+      client: ackClient({ lodash: [{ id: "GHSA-x", severity: "high" }] }),
+      cwd, now: () => new Date("2026-05-27T10:00:00Z"), log: (s) => log.push(s), err: () => {},
     });
     assert.equal(code, 0);
-    assert.ok(log.some((s) => /re-approved/i.test(s)));
-    const ledger = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"));
-    assert.deepEqual(ledger.lodash.cve.acknowledged, [{ id: "GHSA-new", severity: "high" }]);
-    assert.equal(ledger.lodash.cve.acknowledgedBy, "alice");
-    assert.equal(ledger.lodash.cve.acknowledgedAt, "2026-05-26T00:00:00.000Z");
+    assert.ok(log.some((s) => /acknowledged/i.test(s)));
+    const cve = readLedger(cwd).lodash.cve;
+    assert.equal(cve?.reason, "dev-only, path unreachable");
+    assert.equal(cve?.acknowledgedBy, "Jan Pfajfr <jan@example.com>");
+    assert.equal(cve?.acknowledged.length, 1);
+    assert.equal(cve?.acknowledgedAt, "2026-05-27T10:00:00.000Z");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("runReapprove errors and leaves ledger unchanged when offline", async () => {
+test("runAcknowledge errors and leaves ledger unchanged when offline", async () => {
   const cwd = seedLedger({});
   try {
     const before = readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8");
-    const code = await runReapprove({ pkg: "lodash", approvedBy: "alice", client: reapproveClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
+    const code = await runAcknowledge({ pkg: "lodash", reason: "x", identity: () => null, client: ackClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
     assert.equal(code, 1);
     assert.equal(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"), before);
   } finally {
@@ -228,11 +258,11 @@ test("runReapprove errors and leaves ledger unchanged when offline", async () =>
   }
 });
 
-test("runReapprove errors on unknown package", async () => {
+test("runAcknowledge errors on unknown package", async () => {
   const cwd = seedLedger({});
   try {
     const errs: string[] = [];
-    const code = await runReapprove({ pkg: "ghost", approvedBy: "alice", client: reapproveClient({}), cwd, now: () => new Date(), log: () => {}, err: (s) => errs.push(s) });
+    const code = await runAcknowledge({ pkg: "ghost", reason: "x", identity: () => null, client: ackClient({}), cwd, now: () => new Date(), log: () => {}, err: (s) => errs.push(s) });
     assert.equal(code, 1);
     assert.ok(errs.some((s) => /ghost/.test(s)));
   } finally {
@@ -266,63 +296,4 @@ test("parseAddArgs: no package yields the no-package marker", () => {
 
 test("parseAddArgs: empty or flag-like reason is rejected", () => {
   assert.match(parseAddArgs(["a", "--force-with-reason", "-D"]).error ?? "", /reason/i);
-});
-
-test("runApprove derives identity from git when no --approved-by is given", () => {
-  const cwd = seedLedger({ risk: "high", reason: "needed" });
-  try {
-    const code = runApprove({ pkg: "lodash", approvedBy: null, identity: () => "Jan <j@x>",
-      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
-    assert.equal(code, 0);
-    const e = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8")).lodash;
-    assert.deepEqual(e.approval, { by: "Jan <j@x>", via: "git-config", at: "2026-05-26T00:00:00.000Z" });
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
-});
-
-test("runApprove uses an explicit --approved-by as manual", () => {
-  const cwd = seedLedger({ risk: "high", reason: "needed" });
-  try {
-    const code = runApprove({ pkg: "lodash", approvedBy: "Alice", identity: () => null,
-      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
-    assert.equal(code, 0);
-    const e = JSON.parse(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8")).lodash;
-    assert.deepEqual(e.approval, { by: "Alice", via: "manual", at: "2026-05-26T00:00:00.000Z" });
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
-});
-
-test("runApprove preserves other ledger entries", () => {
-  const cwd = seedLedger({ risk: "high", reason: "needed" });
-  try {
-    // add a second, unrelated entry to the seeded ledger
-    const path = join(cwd, ".security", "dependency-approvals.json");
-    const ledger = JSON.parse(readFileSync(path, "utf8"));
-    ledger.express = { approvedVersion: "4.0.0", approvedAt: "x", risk: "low", reason: null, approvedBy: "Bob", checks: { ageHours: 1, installScripts: false } };
-    writeFileSync(path, JSON.stringify(ledger, null, 2));
-    const code = runApprove({ pkg: "lodash", approvedBy: "Alice", identity: () => null,
-      now: () => new Date("2026-05-26T00:00:00Z"), cwd, log: () => {}, err: () => {} });
-    assert.equal(code, 0);
-    const after = JSON.parse(readFileSync(path, "utf8"));
-    assert.equal(after.lodash.approval.by, "Alice");
-    assert.equal(after.express.approvedBy, "Bob"); // sibling untouched
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
-});
-
-test("runApprove errors when identity cannot be determined and no name given", () => {
-  const cwd = seedLedger({});
-  try {
-    const errs: string[] = [];
-    const code = runApprove({ pkg: "lodash", approvedBy: null, identity: () => null,
-      now: () => new Date(), cwd, log: () => {}, err: (s: string) => errs.push(s) });
-    assert.equal(code, 1);
-    assert.match(errs.join("\n"), /git config|--approved-by/i);
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
-});
-
-test("runApprove errors on a package not in the ledger", () => {
-  const cwd = seedLedger({});
-  try {
-    const code = runApprove({ pkg: "ghost", approvedBy: "Alice", identity: () => null,
-      now: () => new Date(), cwd, log: () => {}, err: () => {} });
-    assert.equal(code, 1);
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

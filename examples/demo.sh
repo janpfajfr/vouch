@@ -8,7 +8,8 @@
 #   2. a package with an install script is BLOCKED
 #   3. check passes when every dependency is in the ledger
 #   4. a raw `npm install` bypass is CAUGHT by check
-#   5. --force-with-reason records a reason but check still fails without approvedBy
+#   5. --force-with-reason records a reason; check then passes (the decision is recorded
+#      and explained — the PR review is the approval)
 #
 # Requires: node 18+, npm, and network access. Nothing is installed outside the
 # temporary directory, which is removed on exit.
@@ -52,11 +53,11 @@ npm install ms --no-audit --no-fund >/dev/null 2>&1 && echo "installed 'ms' via 
 echo "\$ check"; node "$CLI" check --quiet; echo "  exit: $?"
 
 echo
-echo "########## 5) --force-with-reason: reason is attribution, not authorization ##########"
+echo "########## 5) --force-with-reason: the decision is recorded and explained ##########"
 run esbuild --quiet --force-with-reason "demo: needed for build"
-echo "\$ check  (high-risk entry has a reason but no approvedBy)"
+echo "\$ check  (high-risk entry now has a reason, so it passes)"
 node "$CLI" check --quiet; echo "  exit: $?"
 
 echo
-echo "== done. The forced entry was recorded and attributed, but check still fails =="
-echo "== until a human adds approvedBy: the bypass is impossible to hide. =="
+echo "== done. vouch recorded the decision, the reason, and who added it — all in the diff. =="
+echo "== check passes because it is explained; the PR review is where a human approves. =="

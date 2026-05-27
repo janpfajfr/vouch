@@ -22,19 +22,16 @@ Before adding a dependency, the agent MUST explain:
 6. What risk the dependency introduces.
 
 If `vouch` blocks the package, the agent MUST NOT bypass it with
-`--force-with-reason` to merely silence the gate. A `reason` is attribution, not
-authorization: a high-risk dependency only passes CI once a human adds
-`approvedBy` to its ledger entry. The agent should instead propose a safer
+`--force-with-reason` to merely silence the gate. The agent should instead propose a safer
 alternative.
 
-To authorize a high-risk dependency, a human runs `vouch approve <pkg>` (which records their
-git identity) — an agent MUST NOT run `approve` on a human's behalf. Authorization is a human
-act; the agent's job is to surface the decision, not to make it.
+`vouch` records a decision; it does not grant approval. An agent records a dependency with
+`vouch <pkg>` (explaining *why* first) — the recorded `addedBy` is attribution, not
+authorization. The actual approval is the human's PR/MR review, with the ledger entry visible
+in the diff. An agent MUST NOT mark a risky dependency as acceptable on a human's behalf; its
+job is to surface the decision, not to make it.
 
-When `approval.verify` is `github-review`, an agent cannot satisfy authorization at all — only
-a human's PR review counts. The agent's job ends at surfacing the dependency for review.
-
-If `check` reports that a dependency gained a CVE since approval, the agent MUST NOT
-silently re-acknowledge it. Re-approval (`vouch reapprove <pkg> --approved-by "<name>"`)
-records a human's name as authorization and is visible in the committed ledger. The agent
-should surface the advisory to a human, not clear the gate on their behalf.
+If `check` reports that a dependency gained a CVE since it was recorded, the agent MUST NOT
+silently accept it with `vouch acknowledge`. Surface it to a human, who fixes it, removes it,
+or — judging the risk acceptable — runs `vouch acknowledge <pkg> --reason "<why>"`, which is
+visible in the committed ledger and the PR diff.

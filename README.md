@@ -57,7 +57,7 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
 - Fails the build if any dependency in `package.json` has **no ledger entry** — i.e. it was
   added without `vouch`.
 - Fails if a dependency **gained a CVE** that no human has acknowledged.
-- A high-risk entry only passes once a human has signed off (see *Attribution vs authorization*).
+- Fails if a **high-risk** entry has no `reason` recorded — so the reviewer can judge it in the PR.
 
 ---
 
@@ -66,65 +66,43 @@ That's it. A raw `pnpm add` (by a human *or* an agent) can no longer reach `main
 | Command | What it does |
 |---|---|
 | `vouch <pkg> [-D]` | Review, install, and record a dependency (`-D` for devDependencies). |
-| `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason as attribution. |
-| `vouch check` | CI gate: fail on unreviewed deps, missing approvals, or unacknowledged CVEs. |
-| `vouch approve <pkg> [--approved-by "<name>"]` | Record a human approver for a high-risk dependency (identity auto-derived from `git config`). |
-| `vouch reapprove <pkg> --approved-by "<name>"` | A named human acknowledges a dependency's current advisories. |
+| `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason in the ledger. |
+| `vouch check` | CI gate: fail on unrecorded deps, unexplained high-risk, or CVE drift. |
+| `vouch acknowledge <pkg> --reason "<why>"` | Knowingly accept a dependency's current advisories (CVE drift). |
 
 Environment: `YSNA_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
 
 ---
 
-## Attribution vs authorization
+## vouch records; the PR review approves
 
 This distinction is the heart of the tool:
 
-- **`--force-with-reason "…"` is *attribution*** — it says *why* you forced something. It does
-  **not** authorize it.
-- **A name in the ledger is *authorization*** — a high-risk dependency only passes `check`
-  once a human adds `approvedBy` (`requireApprovalForHighRisk`), and a CVE only clears once a
-  human runs `reapprove`.
+- **vouch records a decision.** The ledger entry — who added it (`addedBy`, derived from `git
+  config`), why (`reason`), at what version, with what risk — is *attribution*. It is
+  self-asserted and not, by itself, an authorization.
+- **The PR/MR review is the authorization.** A human approving the pull request — with the
+  ledger entry visible in the diff — is the act that approves. vouch does not try to verify or
+  replace that; it makes the decision conscious and reviewable.
 
-You can always force a thing through. You can never do it *invisibly*.
-
-Authorize a high-risk dependency with `vouch approve <pkg>` — it records your identity from
-`git config` (or an explicit `--approved-by "<name>"`), so authorization is a real command,
-not a hand-edited JSON field. To *verify* that approval against a real GitHub PR review, see
-**Verified approval** below.
-
-## Verified approval (optional)
-
-By default `vouch` *records* who approved a dependency. To *verify* it, set in `.safe-dep.json`:
-
-    { "approval": { "verify": "github-review", "requireVerifiedApproval": false, "allowedApprovers": [] } }
-
-In CI on a pull request, `vouch check` then confirms the PR has an approving review from a
-permitted human (write access; restrict to specific logins with `allowedApprovers`). It is
-**fail-open**: with no PR context or token it warns but does not fail (reviews usually land
-after CI). Set `requireVerifiedApproval: true` to make a confirmed *un*reviewed high-risk
-approval fail the build. Verification is live at check time and never written to the ledger;
-the workflow must run on `pull_request` and pass `GITHUB_TOKEN` (see
-`examples/github-actions-verify.yml`).
-
-Recorded approval is **attribution**, not **authorization** — the platform PR review is the
-real gate, and `vouch` feeds it rather than replacing it. See [`docs/threat-model.md`](docs/threat-model.md)
-for the trust tiers, what `vouch` does and does not defend, and the known verification gaps.
-
----
+You can always force a thing through with `--force-with-reason`. You can never do it
+*invisibly* — the reason and your identity land in the committed ledger, in the diff, in front
+of the reviewer. See [`docs/threat-model.md`](docs/threat-model.md) for what vouch does and
+does not defend.
 
 ## When `check` blocks on a CVE
 
 A block isn't damage — it's a pause: *something about a dependency you vouched for changed.*
 You have three honest options, in order of preference:
 
-1. **Fix it** — `vouch <pkg>@<patched-version>` to re-approve a fixed release.
+1. **Fix it** — `vouch <pkg>@<patched-version>` to record a fixed release.
 2. **Remove or replace it** — drop the dependency (or take a suggested alternative).
 3. **Accept it knowingly** — once you've judged the risk acceptable (dev-only, unreachable
-   code path, no fix yet), `vouch reapprove <pkg> --approved-by "<name>"`.
+   code path, no fix yet), `vouch acknowledge <pkg> --reason "<why this is acceptable>"`.
 
-`reapprove` re-queries advisories for the approved version and records the acknowledged set,
-who acknowledged it, and when — visible in the PR diff. It refuses to write while offline
-(we never record an acknowledgement we couldn't verify).
+`acknowledge` re-queries advisories for the recorded version and records the acknowledged set,
+who acknowledged it (from `git config`), why, and when — visible in the PR diff. It refuses to
+write while offline (we never record an acknowledgement we couldn't verify).
 
 It only blocks on a CVE it **confirmed**: offline or a stalled endpoint fails *open* (a warning,
 never a failed build), and it blocks only the specific dependency that drifted — never your
@@ -141,7 +119,6 @@ All optional; sensible defaults apply.
   "minimumVersionAgeHours": 24,
   "warnVersionAgeHours": 168,
   "blockInstallScripts": true,
-  "requireApprovalForHighRisk": true,
   "requireCooldownConfigured": false,
   "allowScopedPackages": ["@your-org/*"],
   "packageManager": "auto",
@@ -164,7 +141,7 @@ those decisions, asynchronously and accountably.
 
 Not a scanner. Deep per-package analysis (typosquatting, behavioral) is the job of tools like
 `npq` and Socket. We don't *scan* for CVEs to discover them — we record the advisory posture of
-what you approved and flag **drift** after the fact. This tool owns **provenance and enforcement**.
+what you recorded and flag **drift** after the fact. This tool owns **provenance and enforcement**.
 
 ---
 

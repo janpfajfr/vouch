@@ -7,7 +7,9 @@ import { execFileSync } from "node:child_process";
 
 const cli = resolve("dist/src/cli.js");
 
-test("check exits 1 on unreviewed dependency", () => {
+const lowEntry = JSON.stringify({ lodash: { approvedVersion: "4.17.21", addedAt: "x", risk: "low", reason: null, addedBy: null, checks: { ageHours: 1, installScripts: false } } });
+
+test("check exits 1 on unrecorded dependency", () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
@@ -22,28 +24,36 @@ test("check exits 0 when ledger covers deps", () => {
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
     mkdirSync(join(dir, ".security"), { recursive: true });
-    writeFileSync(
-      join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
-    );
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"), lowEntry);
     const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } });
-    assert.match(out, /all dependencies are approved/);
+    assert.match(out, /all dependencies are recorded/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("reapprove without --approved-by exits 1", () => {
+test("high-risk with a reason passes check (no separate approval step)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { evil: "1" } }));
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"),
+      JSON.stringify({ evil: { approvedVersion: "1.0.0", addedAt: "x", risk: "high", reason: "needed", addedBy: null, checks: { ageHours: 1, installScripts: false } } }));
+    const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } });
+    assert.match(out, /all dependencies are recorded/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("acknowledge without --reason exits 1", () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
     mkdirSync(join(dir, ".security"), { recursive: true });
-    writeFileSync(
-      join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
-    );
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"), lowEntry);
     assert.throws(
-      () => execFileSync(process.execPath, [cli, "reapprove", "lodash"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      () => execFileSync(process.execPath, [cli, "acknowledge", "lodash"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }),
       (err: NodeJS.ErrnoException & { status?: number }) => {
         assert.equal(err.status, 1);
         return true;
@@ -54,17 +64,14 @@ test("reapprove without --approved-by exits 1", () => {
   }
 });
 
-test("reapprove rejects a flag as the --approved-by value", () => {
+test("acknowledge rejects a flag as the --reason value", () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
     mkdirSync(join(dir, ".security"), { recursive: true });
-    writeFileSync(
-      join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ lodash: { approvedVersion: "4.17.21", approvedAt: "x", risk: "low", reason: null, approvedBy: null, checks: { ageHours: 1, installScripts: false } } }),
-    );
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"), lowEntry);
     assert.throws(
-      () => execFileSync(process.execPath, [cli, "reapprove", "lodash", "--approved-by", "-x"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      () => execFileSync(process.execPath, [cli, "acknowledge", "lodash", "--reason", "-x"], { cwd: dir, stdio: "pipe", env: { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" } }),
       (err: NodeJS.ErrnoException & { status?: number }) => {
         assert.equal(err.status, 1);
         return true;
@@ -75,10 +82,11 @@ test("reapprove rejects a flag as the --approved-by value", () => {
   }
 });
 
-test("--help prints usage and exits 0", () => {
+test("--help prints usage and the foundation command set", () => {
   const out = execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.match(out, /Usage:/);
-  assert.match(out, /vouch reapprove/);
+  assert.match(out, /vouch acknowledge/);
+  assert.doesNotMatch(out, /vouch approve|reapprove/);
 });
 
 test("'help' shows help and exits 0 (does not try to install a package called 'help')", () => {
@@ -87,7 +95,6 @@ test("'help' shows help and exits 0 (does not try to install a package called 'h
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: {} }));
     const out = execFileSync(process.execPath, [cli, "help"], { cwd: dir, encoding: "utf8" });
     assert.match(out, /Usage:/);
-    // 'help' must not have been installed
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     assert.equal(pkg.dependencies.help, undefined);
   } finally {
@@ -98,40 +105,4 @@ test("'help' shows help and exits 0 (does not try to install a package called 'h
 test("--version prints a semver and exits 0", () => {
   const out = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
   assert.match(out, /\d+\.\d+\.\d+/);
-});
-
-test("approve sets a git-config approver and check then passes", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
-  try {
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { evil: "1" } }));
-    mkdirSync(join(dir, ".security"), { recursive: true });
-    writeFileSync(join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ evil: { approvedVersion: "1.0.0", approvedAt: "x", risk: "high", reason: "needed", approvedBy: null, checks: { ageHours: 1, installScripts: false } } }));
-    const env = { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1" };
-    execFileSync("git", ["init", "-q"], { cwd: dir });
-    execFileSync("git", ["config", "user.name", "Tester"], { cwd: dir });
-    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: dir });
-    const out = execFileSync(process.execPath, [cli, "approve", "evil"], { cwd: dir, encoding: "utf8", env });
-    assert.match(out, /Approved evil/);
-    const checkOut = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env });
-    assert.match(checkOut, /all dependencies are approved/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("check warns (fail-open) when verify is on but no PR context", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
-  try {
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { evil: "1" } }));
-    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ approval: { verify: "github-review", requireVerifiedApproval: false, allowedApprovers: [] } }));
-    mkdirSync(join(dir, ".security"), { recursive: true });
-    writeFileSync(join(dir, ".security", "dependency-approvals.json"),
-      JSON.stringify({ evil: { approvedVersion: "1.0.0", approvedAt: "x", risk: "high", reason: "needed", approvedBy: null, approval: { by: "Jan", via: "git-config", at: "t" }, checks: { ageHours: 1, installScripts: false } } }));
-    const env = { ...process.env, YSNA_ADVISORY_URL: "http://127.0.0.1:1", GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_REPOSITORY: "", GITHUB_EVENT_PATH: "" };
-    const out = execFileSync(process.execPath, [cli, "check"], { cwd: dir, encoding: "utf8", env });
-    assert.match(out, /all dependencies are approved/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });

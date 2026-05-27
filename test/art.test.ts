@@ -16,7 +16,7 @@ test("wordmark returns non-empty string text", () => {
 });
 test("block banner always returns the catchphrase, even non-TTY", () => {
   const b = blockBanner({ isTTY: false, noColor: true, quiet: true });
-  assert.match(b, /PACKAGE\s+REJECTED/);
+  assert.match(b, /REVIEW/i);
 });
 test("no ANSI escape codes when noColor is set", () => {
   const b = blockBanner({ isTTY: true, noColor: true, quiet: false });

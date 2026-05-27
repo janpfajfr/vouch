@@ -3,34 +3,24 @@ import { join } from "node:path";
 
 export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 
-export interface ApprovalConfig {
-  verify: "off" | "github-review";
-  requireVerifiedApproval: boolean;
-  allowedApprovers: string[];
-}
-
 export interface Config {
   minimumVersionAgeHours: number;
   warnVersionAgeHours: number;
   blockInstallScripts: boolean;
-  requireApprovalForHighRisk: boolean;
   requireCooldownConfigured: boolean;
   allowScopedPackages: string[];
   packageManager: PackageManager;
   knownAlternatives: Record<string, string>;
-  approval: ApprovalConfig;
 }
 
 export const DEFAULT_CONFIG: Config = {
   minimumVersionAgeHours: 24,
   warnVersionAgeHours: 168,
   blockInstallScripts: true,
-  requireApprovalForHighRisk: true,
   requireCooldownConfigured: false,
   allowScopedPackages: [],
   packageManager: "auto",
   knownAlternatives: {},
-  approval: { verify: "off", requireVerifiedApproval: false, allowedApprovers: [] },
 };
 
 export function loadConfig(cwd: string): Config {
@@ -47,8 +37,7 @@ export function loadConfig(cwd: string): Config {
   } catch {
     throw new Error(`Invalid .safe-dep.json: not valid JSON`);
   }
-  // Deep-merge the nested approval block so a partial override keeps the other defaults.
-  return { ...DEFAULT_CONFIG, ...parsed, approval: { ...DEFAULT_CONFIG.approval, ...(parsed.approval ?? {}) } };
+  return { ...DEFAULT_CONFIG, ...parsed };
 }
 
 /** True if `name` matches any glob pattern in `patterns` (only `*` is special). */
