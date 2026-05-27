@@ -10,13 +10,15 @@ export interface PackageJsonLike {
 
 export interface CheckViolation { package: string; reason: string; }
 
+/** Direct dependencies (prod + dev) as a name → range map. The single place that
+ *  enumerates package.json deps, so every check sees the same set. */
+export function directDeps(pkg: PackageJsonLike): Record<string, string> {
+  return { ...pkg.dependencies, ...pkg.devDependencies };
+}
+
 export function runCheck(pkg: PackageJsonLike, ledger: Ledger, _cfg: Config): CheckViolation[] {
-  const names = [
-    ...Object.keys(pkg.dependencies ?? {}),
-    ...Object.keys(pkg.devDependencies ?? {}),
-  ];
   const violations: CheckViolation[] = [];
-  for (const name of names) {
+  for (const name of Object.keys(directDeps(pkg))) {
     const entry = ledger[name];
     if (!entry) {
       violations.push({ package: name, reason: "missing ledger entry" });
@@ -35,9 +37,8 @@ export interface VersionDrift { package: string; recorded: string; range: string
  *  Compares against package.json ranges only (no lockfile). Unparseable ranges are
  *  skipped (satisfiesRange returns null) so they never produce a false drift. */
 export function detectVersionDrift(pkg: PackageJsonLike, ledger: Ledger): VersionDrift[] {
-  const ranges = { ...pkg.dependencies, ...pkg.devDependencies };
   const drift: VersionDrift[] = [];
-  for (const [name, range] of Object.entries(ranges)) {
+  for (const [name, range] of Object.entries(directDeps(pkg))) {
     const entry = ledger[name];
     if (!entry) continue; // unrecorded is already a violation in runCheck
     if (satisfiesRange(entry.approvedVersion, range) === false) {
@@ -56,9 +57,8 @@ export interface Unpinned { package: string; range: string; recorded: string; }
 /** Recorded direct deps whose package.json range is not an exact pin.
  *  Skips unrecorded deps (already a violation in runCheck). */
 export function detectUnpinned(pkg: PackageJsonLike, ledger: Ledger): Unpinned[] {
-  const ranges = { ...pkg.dependencies, ...pkg.devDependencies };
   const out: Unpinned[] = [];
-  for (const [name, range] of Object.entries(ranges)) {
+  for (const [name, range] of Object.entries(directDeps(pkg))) {
     const entry = ledger[name];
     if (!entry) continue;
     if (!isExactPin(range)) out.push({ package: name, range, recorded: entry.approvedVersion });
@@ -93,9 +93,8 @@ export async function runCheckWithCve(
     }
   }
 
-  const names = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})];
   const pkgVersions: Record<string, string[]> = {};
-  for (const name of names) {
+  for (const name of Object.keys(directDeps(pkg))) {
     const entry = ledger[name];
     if (entry) pkgVersions[name] = [entry.approvedVersion];
   }
