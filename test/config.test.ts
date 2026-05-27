@@ -41,6 +41,10 @@ test("versionDrift defaults to warn", () => {
   assert.equal(DEFAULT_CONFIG.versionDrift, "warn");
 });
 
+test("requirePinned defaults to off (opt-in)", () => {
+  assert.equal(DEFAULT_CONFIG.requirePinned, "off");
+});
+
 test("loadConfig has no approval block and no requireApprovalForHighRisk", () => {
   const dir = mkdtempSync(join(tmpdir(), "vouch-cfg-"));
   try {

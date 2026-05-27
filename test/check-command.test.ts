@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runCheck, runCheckWithCve, detectVersionDrift } from "../src/check-command.js";
+import { runCheck, runCheckWithCve, detectVersionDrift, detectUnpinned } from "../src/check-command.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 import type { Ledger } from "../src/ledger.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
@@ -122,6 +122,35 @@ test("runCheckWithCve: version drift blocks when configured", async () => {
   const cfg = { ...DEFAULT_CONFIG, versionDrift: "block" as const };
   const r = await runCheckWithCve({ dependencies: { lodash: "^3.0.0" } }, ledger, cfg, fakeClient({}));
   assert.ok(r.violations.some((v) => v.package === "lodash" && /re-record/i.test(v.reason)));
+});
+
+test("detectUnpinned flags ranged recorded deps, not exact pins or unrecorded ones", () => {
+  const ledger = { lodash: lowAt("4.18.1"), ms: lowAt("2.1.3") };
+  const u = detectUnpinned({ dependencies: { lodash: "^4.18.1", ms: "2.1.3", missing: "^1.0.0" } }, ledger);
+  assert.equal(u.length, 1);
+  assert.equal(u[0].package, "lodash");
+  assert.equal(u[0].recorded, "4.18.1");
+});
+
+test("runCheckWithCve: requirePinned off by default → no pin warning", async () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4.18.1" } }, ledger, DEFAULT_CONFIG, fakeClient({}));
+  assert.ok(!r.warnings.some((w) => /not pinned/i.test(w)));
+});
+
+test("runCheckWithCve: requirePinned warn surfaces unpinned deps, suggests the recorded version", async () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const cfg = { ...DEFAULT_CONFIG, requirePinned: "warn" as const };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4.18.1" } }, ledger, cfg, fakeClient({}));
+  assert.deepEqual(r.violations, []);
+  assert.ok(r.warnings.some((w) => /lodash.*not pinned.*4\.18\.1/i.test(w)));
+});
+
+test("runCheckWithCve: requirePinned block fails on unpinned deps", async () => {
+  const ledger = { lodash: lowAt("4.18.1") };
+  const cfg = { ...DEFAULT_CONFIG, requirePinned: "block" as const };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4.18.1" } }, ledger, cfg, fakeClient({}));
+  assert.ok(r.violations.some((v) => v.package === "lodash" && /not pinned/i.test(v.reason)));
 });
 
 test("runCheckWithCve: versionDrift off suppresses the warning", async () => {

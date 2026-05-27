@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 
-/** What `check` does when a recorded version no longer satisfies the package.json range. */
-export type VersionDriftMode = "warn" | "block" | "off";
+/** What `check` does for a version concern. "off" disables, "warn" surfaces, "block" fails CI. */
+export type CheckMode = "warn" | "block" | "off";
 
 export interface Config {
   minimumVersionAgeHours: number;
@@ -14,7 +14,8 @@ export interface Config {
   allowScopedPackages: string[];
   packageManager: PackageManager;
   knownAlternatives: Record<string, string>;
-  versionDrift: VersionDriftMode;
+  versionDrift: CheckMode;
+  requirePinned: CheckMode;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -26,6 +27,7 @@ export const DEFAULT_CONFIG: Config = {
   packageManager: "auto",
   knownAlternatives: {},
   versionDrift: "warn",
+  requirePinned: "off",
 };
 
 export function loadConfig(cwd: string): Config {

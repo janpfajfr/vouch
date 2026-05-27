@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { satisfiesRange } from "../src/semver.js";
+import { satisfiesRange, isExactPin } from "../src/semver.js";
+
+test("isExactPin: only concrete single versions count as pinned", () => {
+  for (const r of ["1.2.3", "=1.2.3", "v1.2.3", "1.2.3-beta.1", " 1.2.3 "]) assert.equal(isExactPin(r), true, r);
+  for (const r of ["^1.2.3", "~1.2.3", "1.x", "1.2", "*", "", ">=1.0.0", "1.2.3 || 2.0.0", "next", "github:u/r", "file:../x"]) assert.equal(isExactPin(r), false, r);
+});
 
 test("exact version: matches only itself", () => {
   assert.equal(satisfiesRange("1.2.3", "1.2.3"), true);

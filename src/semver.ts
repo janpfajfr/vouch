@@ -97,6 +97,14 @@ function evalAnd(branch: string, ver: V): boolean | null {
   return anyFalse ? false : true;
 }
 
+/** True if `range` is an exact pin (a single concrete version), not a range/wildcard/url.
+ *  "1.2.3", "=1.2.3", "v1.2.3", "1.2.3-beta.1" are pinned; "^1.2.3", "~1.2", "1.x", "*",
+ *  ">=1.0.0", and git/url/tag specs are not. */
+export function isExactPin(range: string): boolean {
+  const r = (range ?? "").trim().replace(/^=?\s*v?/, "");
+  return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)*$/.test(r);
+}
+
 /** Does `version` satisfy `range`? null = the range syntax isn't supported (skip it). */
 export function satisfiesRange(version: string, range: string): boolean | null {
   const ver = parseVersion(version);
