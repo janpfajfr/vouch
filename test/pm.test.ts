@@ -18,7 +18,13 @@ function withDir(files: Record<string, string>, fn: (dir: string) => void) {
 test("detects pnpm by lockfile", () => withDir({ "pnpm-lock.yaml": "" }, (d) => assert.equal(detectPM(d, "auto"), "pnpm")));
 test("detects yarn by lockfile", () => withDir({ "yarn.lock": "" }, (d) => assert.equal(detectPM(d, "auto"), "yarn")));
 test("detects npm by lockfile", () => withDir({ "package-lock.json": "" }, (d) => assert.equal(detectPM(d, "auto"), "npm")));
-test("defaults to pnpm when none", () => withDir({}, (d) => assert.equal(detectPM(d, "auto"), "pnpm")));
+test("Corepack packageManager field wins over a lockfile", () =>
+  withDir({ "pnpm-lock.yaml": "", "package.json": JSON.stringify({ packageManager: "npm@10.0.0" }) }, (d) => assert.equal(detectPM(d, "auto"), "npm")));
+test("Corepack pnpm via packageManager field", () =>
+  withDir({ "package.json": JSON.stringify({ packageManager: "pnpm@9.5.0" }) }, (d) => assert.equal(detectPM(d, "auto"), "pnpm")));
+test("ignores unknown packageManager values (falls through to other signals)", () =>
+  withDir({ "package.json": JSON.stringify({ packageManager: "bun@1.0" }), "yarn.lock": "" }, (d) => assert.equal(detectPM(d, "auto"), "yarn")));
+test("no signal at all defaults to npm (Node baseline, not pnpm)", () => withDir({}, (d) => assert.equal(detectPM(d, "auto"), "npm")));
 test("explicit config overrides detection", () => withDir({ "yarn.lock": "" }, (d) => assert.equal(detectPM(d, "npm"), "npm")));
 
 test("install args, runtime and dev", () => {

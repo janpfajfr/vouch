@@ -188,7 +188,7 @@ test("safe (old, no scripts) package installs and writes ledger", async () => {
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
-    assert.deepEqual(calls[0], ["add", "lodash"]);
+    assert.deepEqual(calls[0], ["install", "lodash"]);
     const ledger = readLedger(dir);
     assert.equal(ledger.lodash.risk, "low");
     assert.equal(ledger.lodash.approvedVersion, "1.0.0");
