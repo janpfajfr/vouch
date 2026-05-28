@@ -42,7 +42,22 @@ export function loadConfig(cwd: string): Config {
   } catch {
     throw new Error(`Invalid .safe-dep.json: not valid JSON`);
   }
-  return { ...DEFAULT_CONFIG, ...parsed };
+  const cfg = { ...DEFAULT_CONFIG, ...parsed };
+  // Validate enum fields: a typo here (e.g. "blcok") would otherwise silently fall through
+  // to a weaker mode, quietly downgrading a gate the author meant to block.
+  checkEnum("versionDrift", cfg.versionDrift, CHECK_MODES);
+  checkEnum("requirePinned", cfg.requirePinned, CHECK_MODES);
+  checkEnum("packageManager", cfg.packageManager, PACKAGE_MANAGERS);
+  return cfg;
+}
+
+const CHECK_MODES = ["warn", "block", "off"] as const;
+const PACKAGE_MANAGERS = ["auto", "pnpm", "npm", "yarn"] as const;
+
+function checkEnum(key: string, value: unknown, allowed: readonly string[]): void {
+  if (!allowed.includes(value as string)) {
+    throw new Error(`Invalid .safe-dep.json: "${key}" must be one of ${allowed.map((a) => `"${a}"`).join(", ")} (got ${JSON.stringify(value)})`);
+  }
 }
 
 /** True if `name` matches any glob pattern in `patterns` (only `*` is special). */

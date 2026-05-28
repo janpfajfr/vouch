@@ -8,7 +8,6 @@ const CYAN = "\x1b[36m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
-const BLUE = "\x1b[34m";
 const RESET = "\x1b[0m";
 
 function color(s: string, code: string, opts: OutputOpts): string {
@@ -60,8 +59,4 @@ export function warn(s: string, opts: OutputOpts): string {
 
 export function blocked(s: string, opts: OutputOpts): string {
   return color(s, RED, opts);
-}
-
-export function muted(s: string, opts: OutputOpts): string {
-  return color(s, BLUE, opts);
 }

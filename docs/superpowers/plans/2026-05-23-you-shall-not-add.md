@@ -1,5 +1,8 @@
 # you-shall-not-add Implementation Plan
 
+> **Historical (pre-rename).** The tool is now **vouch**; this plan uses the original
+> `you-shall-not-add` / `safe-add` names. Kept for context.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a zero-runtime-dependency CLI that gates npm dependency additions through a committed approval ledger and a CI `check` that fails when a dependency entered the repo unreviewed.

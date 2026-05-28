@@ -11,7 +11,7 @@ import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } f
 function fakeRegistry(meta: Partial<PackageMetadata>): RegistryClient {
   return {
     async fetchMetadata(name) {
-      return { name, version: "1.0.0", publishedAt: new Date("2020-01-01"), scripts: {}, hasRepository: true, hasLicense: true, deprecated: false, ...meta };
+      return { name, version: "1.0.0", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false, ...meta };
     },
   };
 }
@@ -78,6 +78,25 @@ test("parseSpec handles plain, versioned, and scoped names", () => {
   assert.deepEqual(parseSpec("lodash@4.17.21"), { name: "lodash", version: "4.17.21" });
   assert.deepEqual(parseSpec("@scope/pkg"), { name: "@scope/pkg", version: undefined });
   assert.deepEqual(parseSpec("@scope/pkg@1.2.3"), { name: "@scope/pkg", version: "1.2.3" });
+});
+
+test("runSafeAdd surfaces a deprecation note and records medium risk", async () => {
+  const dir = setup();
+  try {
+    const logs: string[] = [];
+    const code = await runSafeAdd({
+      spec: "request", dev: false, force: null,
+      registry: fakeRegistry({ deprecated: true }),
+      installer: { async install() { return 0; } },
+      identity: noIdentity,
+      now: () => new Date("2026-05-23"), cwd: dir, log: (s) => logs.push(s), err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.ok(logs.some((s) => /deprecated/i.test(s)), "notes the deprecation");
+    assert.equal(readLedger(dir).request.risk, "medium");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("runSafeAdd records addedBy from the injected git identity", async () => {

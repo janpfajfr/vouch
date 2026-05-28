@@ -37,6 +37,30 @@ test("throws on malformed JSON", () => {
   }
 });
 
+test("rejects an invalid enum value instead of silently downgrading the gate", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "blcok" }));
+    assert.throws(() => loadConfig(dir), /versionDrift.*one of/);
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ packageManager: "bun" }));
+    assert.throws(() => loadConfig(dir), /packageManager.*one of/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("accepts valid enum values", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block", requirePinned: "warn", packageManager: "pnpm" }));
+    const cfg = loadConfig(dir);
+    assert.equal(cfg.versionDrift, "block");
+    assert.equal(cfg.requirePinned, "warn");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("versionDrift defaults to warn", () => {
   assert.equal(DEFAULT_CONFIG.versionDrift, "warn");
 });

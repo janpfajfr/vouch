@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
 import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
-import { checkVersionAge, checkInstallScripts, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
+import { checkVersionAge, checkInstallScripts, checkDeprecated, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
@@ -106,6 +106,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     const findings: Finding[] = [
       checkVersionAge(meta.publishedAt, opts.now(), cfg),
       checkInstallScripts(meta.scripts, cfg),
+      checkDeprecated(meta.deprecated),
     ];
     for (const f of findings) {
       if (f.level === "block") blocking.push(f.message);

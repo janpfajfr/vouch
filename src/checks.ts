@@ -28,6 +28,11 @@ export function checkInstallScripts(scripts: Record<string, string>, cfg: Config
   return { level, message: `install-time script${found.length > 1 ? "s" : ""} detected: ${found.join(", ")}` };
 }
 
+export function checkDeprecated(deprecated: boolean): Finding {
+  if (!deprecated) return { level: "ok", message: "Not deprecated." };
+  return { level: "warn", message: "package is marked deprecated by its publisher" };
+}
+
 export function overallRisk(findings: Finding[]): Risk {
   if (findings.some((f) => f.level === "block")) return "high";
   if (findings.some((f) => f.level === "warn")) return "medium";

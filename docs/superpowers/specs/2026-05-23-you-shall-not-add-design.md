@@ -1,5 +1,9 @@
 # you-shall-not-add — Design Spec
 
+> **Historical (pre-rename).** Documents the project under its original name
+> `you-shall-not-add` / `safe-add`; the tool is now **vouch**. Kept for context — see the
+> README for current naming and behavior.
+
 **Date:** 2026-05-23
 **Status:** Approved (brainstorming)
 

@@ -3,8 +3,6 @@ export interface PackageMetadata {
   version: string;
   publishedAt: Date | null;
   scripts: Record<string, string>;
-  hasRepository: boolean;
-  hasLicense: boolean;
   deprecated: boolean;
 }
 
@@ -32,8 +30,6 @@ export function normalizeMetadata(name: string, versionSpec: string | undefined,
     version,
     publishedAt: timeStr ? new Date(timeStr) : null,
     scripts: v.scripts ?? {},
-    hasRepository: Boolean(v.repository),
-    hasLicense: Boolean(v.license),
     deprecated: Boolean(v.deprecated),
   };
 }
