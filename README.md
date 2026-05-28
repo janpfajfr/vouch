@@ -85,6 +85,15 @@ npx vouch --help          # no install
 npm install -g vouch      # or install the `vouch` command
 ```
 
+**Bootstrap the config (optional, recommended)** — one command, idempotent:
+
+```bash
+vouch init                # writes .safe-dep.json with $schema + detected packageManager
+```
+
+That gives your editor **autocomplete and validation** for `.safe-dep.json` (any tool that
+respects JSON `$schema` — VS Code, WebStorm, lspconfig — picks it up automatically).
+
 **Add a dependency** — instead of `npm install` / `pnpm add`, run:
 
 ```bash
@@ -182,6 +191,7 @@ build), and only the specific dependency that drifted — never your whole proje
 | `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason in the ledger. |
 | `vouch check` | CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift. |
 | `vouch acknowledge <pkg> --reason "<why>"` | Knowingly accept a dependency's current advisories (CVE drift). |
+| `vouch init` | Bootstrap `.safe-dep.json` with `$schema` + detected `packageManager`. Idempotent. |
 | `vouch --help` · `vouch --version` | Help (with the wordmark) and version. |
 
 Environment: `YSNA_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
@@ -192,8 +202,12 @@ Environment: `YSNA_ADVISORY_URL` overrides the npm advisory endpoint (for enterp
 
 All optional; sensible defaults apply.
 
+Add `"$schema"` to get autocomplete + validation in your editor (or just run `vouch init`,
+which adds it for you):
+
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/janpfajfr/vouch/main/schema.json",
   "minimumVersionAgeHours": 24,
   "warnVersionAgeHours": 168,
   "blockInstallScripts": true,
@@ -206,6 +220,9 @@ All optional; sensible defaults apply.
   "packageManager": "auto"
 }
 ```
+
+`packageManager: "auto"` (the default) reads the Corepack `packageManager` field from
+`package.json` first, then sniffs lockfiles, then falls back to `npm`.
 
 ---
 
