@@ -5,7 +5,21 @@
     "risk": "low",
     "reason": "Dev-only TypeScript toolchain; type definitions, no install scripts.",
     "approvedBy": null,
-    "checks": { "ageHours": null, "installScripts": false }
+    "checks": {
+      "ageHours": null,
+      "installScripts": false
+    }
+  },
+  "minimist": {
+    "approvedVersion": "1.2.5",
+    "addedAt": "2026-05-28T07:52:09.426Z",
+    "risk": "medium",
+    "reason": null,
+    "addedBy": null,
+    "checks": {
+      "ageHours": 54417.597221944445,
+      "installScripts": false
+    }
   },
   "typescript": {
     "approvedVersion": "^5.5.0",
@@ -13,6 +27,9 @@
     "risk": "low",
     "reason": "Dev-only compiler; the project's own build toolchain, no install scripts.",
     "approvedBy": null,
-    "checks": { "ageHours": null, "installScripts": false }
+    "checks": {
+      "ageHours": null,
+      "installScripts": false
+    }
   }
 }

@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 
@@ -39,37 +40,69 @@ export const DEFAULT_CONFIG: Config = {
   cveAtInstallMinSeverity: "high",
 };
 
-export function loadConfig(cwd: string): Config {
-  const path = join(cwd, ".safe-dep.json");
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return { ...DEFAULT_CONFIG };
+/** File names tried in order. The first one that exists wins; .safe-dep.json is the
+ *  legacy fallback so existing repos keep working. */
+export const CONFIG_CANDIDATES = [
+  "vouch.config.ts",
+  "vouch.config.mts",
+  "vouch.config.mjs",
+  "vouch.config.js",
+  "vouch.config.cjs",
+] as const;
+
+export const LEGACY_JSON_CONFIG = ".safe-dep.json" as const;
+
+export async function loadConfig(cwd: string): Promise<Config> {
+  for (const name of CONFIG_CANDIDATES) {
+    const filepath = join(cwd, name);
+    if (!existsSync(filepath)) continue;
+    let mod: { default?: unknown } & Record<string, unknown>;
+    try {
+      mod = await import(pathToFileURL(filepath).href);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (name.endsWith(".ts") || name.endsWith(".mts")) {
+        throw new Error(`Failed to load ${name}: Node ${process.version} can't load TypeScript natively. Use Node 23+ (or 22.6+ with --experimental-strip-types), or rename to .mjs/.js. Original: ${msg}`);
+      }
+      throw new Error(`Failed to load ${name}: ${msg}`);
+    }
+    if (mod.default === undefined || mod.default === null || typeof mod.default !== "object") {
+      throw new Error(`Invalid ${name}: expected a default-exported config object (e.g. \`export default defineConfig({ ... })\`)`);
+    }
+    return mergeAndValidate(mod.default as Partial<Config>, name);
   }
+  // Legacy JSON fallback.
+  const jsonPath = join(cwd, LEGACY_JSON_CONFIG);
+  if (!existsSync(jsonPath)) return { ...DEFAULT_CONFIG };
   let parsed: Partial<Config>;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(readFileSync(jsonPath, "utf8"));
   } catch {
-    throw new Error(`Invalid .safe-dep.json: not valid JSON`);
+    throw new Error(`Invalid ${LEGACY_JSON_CONFIG}: not valid JSON`);
   }
-  const cfg = { ...DEFAULT_CONFIG, ...parsed };
+  return mergeAndValidate(parsed, LEGACY_JSON_CONFIG);
+}
+
+function mergeAndValidate(parsed: Partial<Config>, source: string): Config {
+  // Strip $schema (legacy JSON's editor-only field) so it doesn't end up on the typed object.
+  const { $schema: _ignored, ...rest } = parsed as Partial<Config> & { $schema?: unknown };
+  const cfg = { ...DEFAULT_CONFIG, ...rest };
   // Validate enum fields: a typo here (e.g. "blcok") would otherwise silently fall through
   // to a weaker mode, quietly downgrading a gate the author meant to block.
-  checkEnum("versionDrift", cfg.versionDrift, CHECK_MODES);
-  checkEnum("requirePinned", cfg.requirePinned, CHECK_MODES);
-  checkEnum("cveAtInstall", cfg.cveAtInstall, CHECK_MODES);
-  checkEnum("cveAtInstallMinSeverity", cfg.cveAtInstallMinSeverity, SEVERITY_RANK);
-  checkEnum("packageManager", cfg.packageManager, PACKAGE_MANAGERS);
+  checkEnum(source, "versionDrift", cfg.versionDrift, CHECK_MODES);
+  checkEnum(source, "requirePinned", cfg.requirePinned, CHECK_MODES);
+  checkEnum(source, "cveAtInstall", cfg.cveAtInstall, CHECK_MODES);
+  checkEnum(source, "cveAtInstallMinSeverity", cfg.cveAtInstallMinSeverity, SEVERITY_RANK);
+  checkEnum(source, "packageManager", cfg.packageManager, PACKAGE_MANAGERS);
   return cfg;
 }
 
 const CHECK_MODES = ["warn", "block", "off"] as const;
 const PACKAGE_MANAGERS = ["auto", "pnpm", "npm", "yarn"] as const;
 
-function checkEnum(key: string, value: unknown, allowed: readonly string[]): void {
+function checkEnum(source: string, key: string, value: unknown, allowed: readonly string[]): void {
   if (!allowed.includes(value as string)) {
-    throw new Error(`Invalid .safe-dep.json: "${key}" must be one of ${allowed.map((a) => `"${a}"`).join(", ")} (got ${JSON.stringify(value)})`);
+    throw new Error(`Invalid ${source}: "${key}" must be one of ${allowed.map((a) => `"${a}"`).join(", ")} (got ${JSON.stringify(value)})`);
   }
 }
 

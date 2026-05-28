@@ -85,14 +85,15 @@ npx vouch --help          # no install
 npm install -g vouch      # or install the `vouch` command
 ```
 
-**Bootstrap the config (optional, recommended)** — one command, idempotent:
+**Bootstrap the config (optional, recommended)** — one command, never overwrites:
 
 ```bash
-vouch init                # writes .safe-dep.json with $schema + detected packageManager
+vouch init                # writes vouch.config.{mjs,js} with all defaults shown
 ```
 
-That gives your editor **autocomplete and validation** for `.safe-dep.json` (any tool that
-respects JSON `$schema` — VS Code, WebStorm, lspconfig — picks it up automatically).
+That gives you a **typed config** (Playwright-style): every option visible with its default,
+full editor autocomplete + type errors via the bundled types, no URL lookup. Delete the keys
+you're happy with and vouch will pick up future defaults; change the ones you're not.
 
 **Add a dependency** — instead of `npm install` / `pnpm add`, run:
 
@@ -191,38 +192,60 @@ build), and only the specific dependency that drifted — never your whole proje
 | `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason in the ledger. |
 | `vouch check` | CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift. |
 | `vouch acknowledge <pkg> --reason "<why>"` | Knowingly accept a dependency's current advisories (CVE drift). |
-| `vouch init` | Bootstrap `.safe-dep.json` with `$schema` + detected `packageManager`. Idempotent. |
+| `vouch init` | Bootstrap `vouch.config.{mjs,js}` with all defaults shown + detected `packageManager`. Refuses to overwrite. |
 | `vouch --help` · `vouch --version` | Help (with the wordmark) and version. |
 
 Environment: `YSNA_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
 
 ---
 
-## Configuration (`.safe-dep.json`)
+## Configuration
 
-All optional; sensible defaults apply.
+The preferred form is a typed config — `vouch.config.{ts,mjs,js,cjs}` — exporting a
+`defineConfig()` call. Every key is optional; the defaults flow through. Generate one with
+`vouch init`:
 
-Add `"$schema"` to get autocomplete + validation in your editor (or just run `vouch init`,
-which adds it for you):
+```js
+// vouch.config.mjs (or .js if your project has "type": "module" — vouch init picks correctly)
+import { defineConfig } from "vouch";
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/janpfajfr/vouch/main/schema.json",
-  "minimumVersionAgeHours": 24,
-  "warnVersionAgeHours": 168,
-  "blockInstallScripts": true,
-  "requireCooldownConfigured": false,
-  "versionDrift": "warn",
-  "requirePinned": "off",
-  "cveAtInstall": "warn",
-  "cveAtInstallMinSeverity": "high",
-  "allowScopedPackages": ["@your-org/*"],
-  "packageManager": "auto"
-}
+export default defineConfig({
+  packageManager: "auto",            // "auto" | "pnpm" | "npm" | "yarn"
+  allowScopedPackages: [],
+
+  // Install-time gate
+  minimumVersionAgeHours: 24,
+  warnVersionAgeHours: 168,
+  blockInstallScripts: true,
+  requireCooldownConfigured: false,
+
+  // CI gate — `vouch check`
+  versionDrift: "warn",              // "warn" | "block" | "off"
+  requirePinned: "off",              // "warn" | "block" | "off"
+
+  // CVE handling at add time
+  cveAtInstall: "warn",              // "warn" | "block" | "off"
+  cveAtInstallMinSeverity: "high",   // "low" | "moderate" | "high" | "critical"
+});
 ```
 
-`packageManager: "auto"` (the default) reads the Corepack `packageManager` field from
-`package.json` first, then sniffs lockfiles, then falls back to `npm`.
+You get **full editor autocomplete and type errors** in any editor with TypeScript support —
+no `$schema` URL fetch, no JSON Schema indirection. Runtime validation still fires (a typo'd
+enum value fails loudly instead of silently downgrading a gate).
+
+`vouch.config.ts` also works on Node 23+ (or 22.6+ with `--experimental-strip-types`). For
+older Node, write `.js`/`.mjs`/`.cjs` — vouch loads any of them.
+
+`packageManager: "auto"` reads the Corepack `packageManager` field from `package.json` first,
+then sniffs lockfiles (`pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`), then falls back
+to `npm`.
+
+### Legacy: `.safe-dep.json`
+
+Existing projects with a `.safe-dep.json` keep working (vouch reads it when no
+`vouch.config.*` is present). Editor autocomplete via JSON `$schema` is also supported —
+point at [`schema.json`](schema.json) in the repo. New projects should prefer
+`vouch.config.{ts,mjs,js}`.
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
@@ -32,8 +32,6 @@ export function parseAddArgs(args: string[]): AddArgs {
   return { spec: positionals[0], dev, force };
 }
 
-export const SCHEMA_URL = "https://raw.githubusercontent.com/janpfajfr/vouch/main/schema.json";
-
 export function helpText(): string {
   return [
     "vouch — a dependency-decision ledger: every dependency is recorded, explained, and reviewable in the PR.",
@@ -42,7 +40,7 @@ export function helpText(): string {
     '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
     "  vouch check                                             CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift",
     '  vouch acknowledge <package> --reason "<why>"            Knowingly accept a dependency\'s current advisories (CVE drift)',
-    "  vouch init                                              Bootstrap .safe-dep.json with $schema (and detected packageManager)",
+    "  vouch init                                              Bootstrap vouch.config.{js,mjs} with typed defaults (and detected packageManager)",
     "  vouch --help | --version",
     "",
     "Flags:",
@@ -65,43 +63,75 @@ export interface InitOptions {
   err: (s: string) => void;
 }
 
-/** Bootstraps .safe-dep.json with the $schema reference (so editors offer autocomplete +
- *  validation) and a confidently-detected packageManager if there is a signal. Idempotent:
- *  if the schema reference is already present, it just reports that. */
-export function runInit(opts: InitOptions): number {
-  const path = join(opts.cwd, ".safe-dep.json");
-  const o = outputOpts();
-  let existing: Record<string, unknown> | null = null;
+/** Pick the right vouch.config extension for this project — .js if package.json
+ *  declares `"type": "module"`, otherwise .mjs (always ESM, regardless of host project). */
+function pickConfigFilename(cwd: string): "vouch.config.js" | "vouch.config.mjs" {
   try {
-    existing = JSON.parse(readFileSync(path, "utf8"));
-  } catch { existing = null; }
+    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
+    return pkg.type === "module" ? "vouch.config.js" : "vouch.config.mjs";
+  } catch {
+    return "vouch.config.mjs";
+  }
+}
 
-  if (existing) {
-    if (typeof existing.$schema === "string") {
+function configFileContent(detectedPM: PM | null): string {
+  const pm = detectedPM ?? "auto";
+  return [
+    "/**",
+    " * vouch — dependency-decision ledger.",
+    " * Defaults shown below. Delete keys you're happy with — vouch picks up future",
+    " * defaults automatically. Change keys you're not happy with.",
+    " * Full reference: https://github.com/janpfajfr/vouch#configuration",
+    " */",
+    `import { defineConfig } from "vouch";`,
+    "",
+    "export default defineConfig({",
+    `  packageManager: ${JSON.stringify(pm)},`,
+    "  allowScopedPackages: [],",
+    "",
+    "  // Install-time gate",
+    "  minimumVersionAgeHours: 24,",
+    "  warnVersionAgeHours: 168,",
+    "  blockInstallScripts: true,",
+    "  requireCooldownConfigured: false,",
+    "",
+    "  // CI gate — `vouch check`",
+    `  versionDrift: "warn",            // "warn" | "block" | "off"`,
+    `  requirePinned: "off",            // "warn" | "block" | "off"`,
+    "",
+    "  // CVE handling at add time",
+    `  cveAtInstall: "warn",            // "warn" | "block" | "off"`,
+    `  cveAtInstallMinSeverity: "high", // "low" | "moderate" | "high" | "critical"`,
+    "});",
+    "",
+  ].join("\n");
+}
+
+/** Bootstraps a typed vouch.config.{js,mjs} with all defaults shown + detected packageManager.
+ *  If a vouch.config.* or .safe-dep.json already exists, reports and exits without overwriting —
+ *  this command never clobbers an existing config. */
+export function runInit(opts: InitOptions): number {
+  const o = outputOpts();
+  // Refuse to touch any existing typed config file or the legacy JSON.
+  for (const name of ["vouch.config.ts", "vouch.config.mts", "vouch.config.mjs", "vouch.config.js", "vouch.config.cjs", ".safe-dep.json"]) {
+    if (existsSync(join(opts.cwd, name))) {
       opts.log(statusHeader("info", "Already initialized", o));
       opts.log("");
-      opts.log("  .safe-dep.json already references the schema.");
+      opts.log(`  Found existing ${name}; leaving it alone.`);
+      opts.log("  To regenerate from scratch, delete it and run \`vouch init\` again.");
       return 0;
     }
-    const updated = { $schema: SCHEMA_URL, ...existing };
-    writeFileSync(path, JSON.stringify(updated, null, 2) + "\n");
-    opts.log(statusHeader("success", "Added $schema to .safe-dep.json", o));
-    opts.log("");
-    opts.log("  Existing keys preserved. Your editor will now offer autocomplete + validation.");
-    return 0;
   }
 
-  // Fresh init: write a one-line config with the schema reference. Seed packageManager only
-  // when detection is confident (Corepack field or lockfile) — otherwise leave it implicit.
-  const cfg: Record<string, unknown> = { $schema: SCHEMA_URL };
-  const pm = detectPMFromSignals(opts.cwd);
-  if (pm) cfg.packageManager = pm;
-  writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
-  opts.log(statusHeader("success", "Initialized .safe-dep.json", o));
+  const filename = pickConfigFilename(opts.cwd);
+  const detectedPM = detectPMFromSignals(opts.cwd);
+  writeFileSync(join(opts.cwd, filename), configFileContent(detectedPM));
+  opts.log(statusHeader("success", `Initialized ${filename}`, o));
   opts.log("");
-  opts.log("  Schema referenced — your editor will offer autocomplete + validation as you type.");
-  if (pm) opts.log(`  Detected packageManager: "${pm}"`);
-  opts.log("  All other config uses defaults; see the README for the full reference.");
+  opts.log("  Every config key is written with its default — delete what you don't care about,");
+  opts.log("  edit what you do. Your editor will autocomplete the enum fields off the bundled types.");
+  if (detectedPM) opts.log(`  Detected packageManager: "${detectedPM}"`);
+  else opts.log(`  No PM signal detected; packageManager left as "auto" (falls back to npm).`);
   return 0;
 }
 
@@ -131,7 +161,7 @@ export interface SafeAddOptions {
 }
 
 export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
-  const cfg = loadConfig(opts.cwd);
+  const cfg = await loadConfig(opts.cwd);
   const { name, version } = parseSpec(opts.spec);
 
   let meta;
@@ -276,7 +306,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (cmd === "check") {
-    const cfg = loadConfig(cwd);
+    const cfg = await loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
     const ledger = readLedger(cwd);
     const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());

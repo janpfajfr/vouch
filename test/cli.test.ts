@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec, runAcknowledge, helpText, parseAddArgs, runInit, SCHEMA_URL } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runAcknowledge, helpText, parseAddArgs, runInit } from "../src/cli.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
@@ -374,48 +374,61 @@ test("parseAddArgs: no package yields the no-package marker", () => {
   assert.equal(parseAddArgs(["--force-with-reason", "x"]).error, "no-package");
 });
 
-test("runInit: writes .safe-dep.json with $schema when none exists", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+test("runInit: writes vouch.config.mjs with all defaults shown when nothing exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-"));
   try {
     const code = runInit({ cwd: dir, log: () => {}, err: () => {} });
     assert.equal(code, 0);
-    const written = JSON.parse(readFileSync(join(dir, ".safe-dep.json"), "utf8"));
-    assert.equal(written.$schema, SCHEMA_URL);
-    assert.ok(!("packageManager" in written), "no PM signal → don't seed packageManager");
+    const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
+    assert.match(content, /import \{ defineConfig \} from "vouch"/);
+    assert.match(content, /export default defineConfig\({/);
+    // Every Config key visible, with its default literal value
+    for (const key of ["packageManager", "allowScopedPackages", "minimumVersionAgeHours", "warnVersionAgeHours", "blockInstallScripts", "requireCooldownConfigured", "versionDrift", "requirePinned", "cveAtInstall", "cveAtInstallMinSeverity"]) {
+      assert.match(content, new RegExp(`\\b${key}:`), `expected ${key} in the generated config`);
+    }
+    // No PM signal → packageManager left as "auto"
+    assert.match(content, /packageManager: "auto"/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("runInit: seeds packageManager when a confident signal exists", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+test("runInit: picks .js when package.json declares type=module, .mjs otherwise", () => {
+  const dirMjs = mkdtempSync(join(tmpdir(), "ysna-init-mjs-"));
+  const dirJs = mkdtempSync(join(tmpdir(), "ysna-init-js-"));
+  try {
+    writeFileSync(join(dirMjs, "package.json"), JSON.stringify({ name: "x" }));
+    runInit({ cwd: dirMjs, log: () => {}, err: () => {} });
+    assert.ok(readFileSync(join(dirMjs, "vouch.config.mjs"), "utf8"));
+
+    writeFileSync(join(dirJs, "package.json"), JSON.stringify({ name: "x", type: "module" }));
+    runInit({ cwd: dirJs, log: () => {}, err: () => {} });
+    assert.ok(readFileSync(join(dirJs, "vouch.config.js"), "utf8"));
+  } finally {
+    rmSync(dirMjs, { recursive: true, force: true });
+    rmSync(dirJs, { recursive: true, force: true });
+  }
+});
+
+test("runInit: seeds detected packageManager into the generated config", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-seed-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ packageManager: "pnpm@9.5.0" }));
     runInit({ cwd: dir, log: () => {}, err: () => {} });
-    assert.equal(JSON.parse(readFileSync(join(dir, ".safe-dep.json"), "utf8")).packageManager, "pnpm");
+    const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
+    assert.match(content, /packageManager: "pnpm"/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("runInit: adds $schema to an existing config, preserving other keys", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+test("runInit: refuses to overwrite an existing vouch.config or legacy .safe-dep.json", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-skip-"));
   try {
-    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block", packageManager: "npm" }));
-    runInit({ cwd: dir, log: () => {}, err: () => {} });
-    const c = JSON.parse(readFileSync(join(dir, ".safe-dep.json"), "utf8"));
-    assert.equal(c.$schema, SCHEMA_URL);
-    assert.equal(c.versionDrift, "block");
-    assert.equal(c.packageManager, "npm");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("runInit: is idempotent when $schema is already present", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
-  try {
-    const before = JSON.stringify({ $schema: SCHEMA_URL, versionDrift: "block" });
-    writeFileSync(join(dir, ".safe-dep.json"), before);
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block" }));
     const logs: string[] = [];
     const code = runInit({ cwd: dir, log: (s) => logs.push(s), err: () => {} });
     assert.equal(code, 0);
     assert.ok(logs.some((s) => /already/i.test(s)));
-    assert.equal(readFileSync(join(dir, ".safe-dep.json"), "utf8"), before);
+    // didn't write a new config file
+    assert.throws(() => readFileSync(join(dir, "vouch.config.mjs"), "utf8"));
+    assert.throws(() => readFileSync(join(dir, "vouch.config.js"), "utf8"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
