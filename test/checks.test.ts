@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkVersionAge, checkInstallScripts, checkDeprecated, overallRisk, DANGEROUS_SCRIPTS } from "../src/checks.js";
+import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, overallRisk, DANGEROUS_SCRIPTS } from "../src/checks.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 
 const now = new Date("2026-05-23T00:00:00Z");
@@ -30,6 +30,36 @@ test("install script blocks when blockInstallScripts true", () => {
   const f = checkInstallScripts({ postinstall: "node x.js" }, DEFAULT_CONFIG);
   assert.equal(f.level, "block");
   assert.match(f.message, /postinstall/);
+});
+
+test("checkKnownCve: empty → ok, regardless of mode", () => {
+  assert.equal(checkKnownCve("x", [], DEFAULT_CONFIG).level, "ok");
+  assert.equal(checkKnownCve("x", [], { ...DEFAULT_CONFIG, cveAtInstall: "block" }).level, "ok");
+});
+
+test("checkKnownCve: 'warn' mode → warn for any severity, names advisory + acknowledge", () => {
+  const f = checkKnownCve("minimist", [{ id: "GHSA-x", severity: "critical" }], DEFAULT_CONFIG);
+  assert.equal(f.level, "warn");
+  assert.match(f.message, /GHSA-x/);
+  assert.match(f.message, /vouch acknowledge minimist/);
+});
+
+test("checkKnownCve: 'block' mode → block when severity ≥ threshold", () => {
+  const cfg = { ...DEFAULT_CONFIG, cveAtInstall: "block" as const, cveAtInstallMinSeverity: "high" as const };
+  const f = checkKnownCve("minimist", [{ id: "GHSA-x", severity: "critical" }], cfg);
+  assert.equal(f.level, "block");
+  assert.match(f.message, /critical-severity/);
+});
+
+test("checkKnownCve: 'block' mode → warn (not block) when all advisories below threshold", () => {
+  const cfg = { ...DEFAULT_CONFIG, cveAtInstall: "block" as const, cveAtInstallMinSeverity: "high" as const };
+  const f = checkKnownCve("minimist", [{ id: "GHSA-x", severity: "moderate" }], cfg);
+  assert.equal(f.level, "warn");
+});
+
+test("checkKnownCve: 'off' → ok even with advisories present", () => {
+  const cfg = { ...DEFAULT_CONFIG, cveAtInstall: "off" as const };
+  assert.equal(checkKnownCve("minimist", [{ id: "GHSA-x", severity: "critical" }], cfg).level, "ok");
 });
 
 test("checkDeprecated warns for a deprecated package, ok otherwise", () => {

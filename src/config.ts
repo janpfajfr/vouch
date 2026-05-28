@@ -6,6 +6,10 @@ export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 /** What `check` does for a version concern. "off" disables, "warn" surfaces, "block" fails CI. */
 export type CheckMode = "warn" | "block" | "off";
 
+/** Severity ranking for the npm advisory levels, low → critical. */
+export const SEVERITY_RANK = ["low", "moderate", "high", "critical"] as const;
+export type Severity = (typeof SEVERITY_RANK)[number];
+
 export interface Config {
   minimumVersionAgeHours: number;
   warnVersionAgeHours: number;
@@ -15,6 +19,11 @@ export interface Config {
   packageManager: PackageManager;
   versionDrift: CheckMode;
   requirePinned: CheckMode;
+  /** What `vouch <pkg>` does on a known advisory at install time.
+   *  "warn" (default): a note; "block": block at or above cveAtInstallMinSeverity; "off": skip. */
+  cveAtInstall: CheckMode;
+  /** Minimum severity that blocks when cveAtInstall is "block". Lower severities still warn. */
+  cveAtInstallMinSeverity: Severity;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -26,6 +35,8 @@ export const DEFAULT_CONFIG: Config = {
   packageManager: "auto",
   versionDrift: "warn",
   requirePinned: "off",
+  cveAtInstall: "warn",
+  cveAtInstallMinSeverity: "high",
 };
 
 export function loadConfig(cwd: string): Config {
@@ -47,6 +58,8 @@ export function loadConfig(cwd: string): Config {
   // to a weaker mode, quietly downgrading a gate the author meant to block.
   checkEnum("versionDrift", cfg.versionDrift, CHECK_MODES);
   checkEnum("requirePinned", cfg.requirePinned, CHECK_MODES);
+  checkEnum("cveAtInstall", cfg.cveAtInstall, CHECK_MODES);
+  checkEnum("cveAtInstallMinSeverity", cfg.cveAtInstallMinSeverity, SEVERITY_RANK);
   checkEnum("packageManager", cfg.packageManager, PACKAGE_MANAGERS);
   return cfg;
 }
