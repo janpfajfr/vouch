@@ -61,6 +61,9 @@ export async function loadConfig(cwd: string): Promise<Config> {
       mod = await import(pathToFileURL(filepath).href);
     } catch (e) {
       const msg = (e as Error).message;
+      if (/Cannot find package 'vouch'/.test(msg)) {
+        throw new Error(`Failed to load ${name}: vouch isn't installed in this project, so \`import { defineConfig } from "vouch"\` can't resolve. Either:\n  - npm install -D vouch  (then the import resolves, full editor types), or\n  - remove the import and use the JSDoc-typed plain export instead (delete ${name} and run \`vouch init\` again — it writes the no-import variant when vouch isn't installed).`);
+      }
       if (name.endsWith(".ts") || name.endsWith(".mts")) {
         throw new Error(`Failed to load ${name}: Node ${process.version} can't load TypeScript natively. Use Node 23+ (or 22.6+ with --experimental-strip-types), or rename to .mjs/.js. Original: ${msg}`);
       }

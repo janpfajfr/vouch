@@ -374,20 +374,33 @@ test("parseAddArgs: no package yields the no-package marker", () => {
   assert.equal(parseAddArgs(["--force-with-reason", "x"]).error, "no-package");
 });
 
-test("runInit: writes vouch.config.mjs with all defaults shown when nothing exists", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ysna-init-"));
+test("runInit: writes a JSDoc-typed plain export when vouch isn't installed locally", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-novouch-"));
   try {
     const code = runInit({ cwd: dir, log: () => {}, err: () => {} });
     assert.equal(code, 0);
     const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
-    assert.match(content, /import \{ defineConfig \} from "vouch"/);
-    assert.match(content, /export default defineConfig\({/);
+    // No runtime import → loads even without `npm install -D vouch`.
+    assert.doesNotMatch(content, /import \{ defineConfig \}/);
+    assert.match(content, /@type \{import\("vouch"\)\.Config\}/);
+    assert.match(content, /export default \{/);
     // Every Config key visible, with its default literal value
     for (const key of ["packageManager", "allowScopedPackages", "minimumVersionAgeHours", "warnVersionAgeHours", "blockInstallScripts", "requireCooldownConfigured", "versionDrift", "requirePinned", "cveAtInstall", "cveAtInstallMinSeverity"]) {
       assert.match(content, new RegExp(`\\b${key}:`), `expected ${key} in the generated config`);
     }
-    // No PM signal → packageManager left as "auto"
     assert.match(content, /packageManager: "auto"/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("runInit: uses the defineConfig import when vouch IS installed locally", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-hasvouch-"));
+  try {
+    // Simulate `npm install -D vouch` — a node_modules/vouch entry exists.
+    mkdirSync(join(dir, "node_modules", "vouch"), { recursive: true });
+    runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
+    assert.match(content, /import \{ defineConfig \} from "vouch"/);
+    assert.match(content, /export default defineConfig\({/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

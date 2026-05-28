@@ -74,18 +74,15 @@ function pickConfigFilename(cwd: string): "vouch.config.js" | "vouch.config.mjs"
   }
 }
 
-function configFileContent(detectedPM: PM | null): string {
-  const pm = detectedPM ?? "auto";
+/** Is `vouch` resolvable in this project's node_modules? If yes, the import-form config
+ *  works at runtime AND gives full editor types via the bundled .d.ts. If not, we write a
+ *  JSDoc-typed plain export that loads with zero local install. */
+function isVouchInstalled(cwd: string): boolean {
+  return existsSync(join(cwd, "node_modules", "vouch"));
+}
+
+function settingsBlock(pm: PM | "auto"): string[] {
   return [
-    "/**",
-    " * vouch — dependency-decision ledger.",
-    " * Defaults shown below. Delete keys you're happy with — vouch picks up future",
-    " * defaults automatically. Change keys you're not happy with.",
-    " * Full reference: https://github.com/janpfajfr/vouch#configuration",
-    " */",
-    `import { defineConfig } from "vouch";`,
-    "",
-    "export default defineConfig({",
     `  packageManager: ${JSON.stringify(pm)},`,
     "  allowScopedPackages: [],",
     "",
@@ -102,9 +99,32 @@ function configFileContent(detectedPM: PM | null): string {
     "  // CVE handling at add time",
     `  cveAtInstall: "warn",            // "warn" | "block" | "off"`,
     `  cveAtInstallMinSeverity: "high", // "low" | "moderate" | "high" | "critical"`,
-    "});",
+  ];
+}
+
+function configFileContent(detectedPM: PM | null, hasVouch: boolean): string {
+  const pm: PM | "auto" = detectedPM ?? "auto";
+  const header = [
+    "/**",
+    " * vouch — dependency-decision ledger.",
+    " * Defaults shown below. Delete keys you're happy with — vouch picks up future",
+    " * defaults automatically. Change keys you're not happy with.",
+    " * Full reference: https://github.com/janpfajfr/vouch#configuration",
+    " */",
+  ];
+  const body = hasVouch ? [
+    `import { defineConfig } from "vouch";`,
     "",
-  ].join("\n");
+    "export default defineConfig({",
+    ...settingsBlock(pm),
+    "});",
+  ] : [
+    `/** @type {import("vouch").Config} */`,
+    "export default {",
+    ...settingsBlock(pm),
+    "};",
+  ];
+  return [...header, ...body, ""].join("\n");
 }
 
 /** Bootstraps a typed vouch.config.{js,mjs} with all defaults shown + detected packageManager.
@@ -125,11 +145,18 @@ export function runInit(opts: InitOptions): number {
 
   const filename = pickConfigFilename(opts.cwd);
   const detectedPM = detectPMFromSignals(opts.cwd);
-  writeFileSync(join(opts.cwd, filename), configFileContent(detectedPM));
+  const hasVouch = isVouchInstalled(opts.cwd);
+  writeFileSync(join(opts.cwd, filename), configFileContent(detectedPM, hasVouch));
   opts.log(statusHeader("success", `Initialized ${filename}`, o));
   opts.log("");
   opts.log("  Every config key is written with its default — delete what you don't care about,");
-  opts.log("  edit what you do. Your editor will autocomplete the enum fields off the bundled types.");
+  opts.log("  edit what you do.");
+  if (hasVouch) {
+    opts.log(`  vouch is installed in this project — \`import { defineConfig } from "vouch"\` is wired up.`);
+  } else {
+    opts.log(`  vouch isn't installed locally; the config uses a JSDoc \`@type\` annotation so it loads without`);
+    opts.log(`  a local install. Run \`npm install -D vouch\` to light up editor autocomplete on this file.`);
+  }
   if (detectedPM) opts.log(`  Detected packageManager: "${detectedPM}"`);
   else opts.log(`  No PM signal detected; packageManager left as "auto" (falls back to npm).`);
   return 0;
