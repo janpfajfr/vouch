@@ -92,8 +92,19 @@ vouch init                # writes vouch.config.{mjs,js} with all defaults shown
 ```
 
 That gives you a **typed config** (Playwright-style): every option visible with its default,
-full editor autocomplete + type errors via the bundled types, no URL lookup. Delete the keys
-you're happy with and vouch will pick up future defaults; change the ones you're not.
+ready to be edited. Delete the keys you're happy with and vouch will pick up future defaults;
+change the ones you're not.
+
+For full editor **autocomplete + type errors** on the generated config, also install vouch as
+a dev dependency so its types are reachable from your project:
+
+```bash
+npm install -D vouch
+```
+
+`vouch init` detects whether vouch is in your `node_modules` and writes the appropriate
+variant — `import { defineConfig } from "vouch"` when installed, a JSDoc-typed plain export
+when not. Either variant **loads at runtime**; only the editor experience differs.
 
 **Add a dependency** — instead of `npm install` / `pnpm add`, run:
 
@@ -229,12 +240,33 @@ export default defineConfig({
 });
 ```
 
-You get **full editor autocomplete and type errors** in any editor with TypeScript support —
-no `$schema` URL fetch, no JSON Schema indirection. Runtime validation still fires (a typo'd
-enum value fails loudly instead of silently downgrading a gate).
+Runtime validation still fires (a typo'd enum value fails loudly instead of silently
+downgrading a gate).
 
-`vouch.config.ts` also works on Node 23+ (or 22.6+ with `--experimental-strip-types`). For
-older Node, write `.js`/`.mjs`/`.cjs` — vouch loads any of them.
+### Editor types — the install-as-devDep step
+
+To make `import { defineConfig } from "vouch"` resolve and light up editor autocomplete on the
+config, vouch needs to be in your project's `node_modules`:
+
+```bash
+npm install -D vouch
+```
+
+`vouch init` detects this automatically and writes the appropriate variant:
+
+| State | Generated config |
+|---|---|
+| `vouch` in your `node_modules` | `import { defineConfig } from "vouch"; export default defineConfig({ ... })` — full editor types via the bundled `.d.ts` |
+| `vouch` not installed locally | `/** @type {import("vouch").Config} */ export default { ... }` — **no runtime import**, loads anywhere; types light up the moment you `npm install -D vouch` |
+
+Both variants load at runtime; only the editor experience differs.
+
+### File format
+
+`vouch.config.ts` works on Node 23+ (or 22.6+ with `--experimental-strip-types`). For older
+Node, write `.js`/`.mjs`/`.cjs` — vouch loads any of them via dynamic `import()`.
+
+### Package manager detection
 
 `packageManager: "auto"` reads the Corepack `packageManager` field from `package.json` first,
 then sniffs lockfiles (`pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`), then falls back
