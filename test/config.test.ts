@@ -69,6 +69,11 @@ test("requirePinned defaults to off (opt-in)", () => {
   assert.equal(DEFAULT_CONFIG.requirePinned, "off");
 });
 
+test("cveAtInstall defaults to warn; min-severity defaults to high", () => {
+  assert.equal(DEFAULT_CONFIG.cveAtInstall, "warn");
+  assert.equal(DEFAULT_CONFIG.cveAtInstallMinSeverity, "high");
+});
+
 test("loadConfig has no approval block and no requireApprovalForHighRisk", () => {
   const dir = mkdtempSync(join(tmpdir(), "vouch-cfg-"));
   try {

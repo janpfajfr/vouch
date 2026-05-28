@@ -99,6 +99,67 @@ test("runSafeAdd surfaces a deprecation note and records medium risk", async () 
   }
 });
 
+test("cveAtInstall=block: a critical advisory blocks the install (no ledger written)", async () => {
+  const dir = setup();
+  writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ cveAtInstall: "block" }));
+  try {
+    let installed = false;
+    const code = await runSafeAdd({
+      spec: "minimist", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { installed = true; return 0; } },
+      advisoryClient: { async fetchBulk() { return { minimist: [{ id: "GHSA-x", severity: "critical" }] }; } },
+      identity: noIdentity,
+      now: () => new Date("2026-05-28"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 1);
+    assert.equal(installed, false);
+    assert.deepEqual(readLedger(dir), {});
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cveAtInstall=block + --force-with-reason: install proceeds and reason is recorded", async () => {
+  const dir = setup();
+  writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ cveAtInstall: "block" }));
+  try {
+    const code = await runSafeAdd({
+      spec: "minimist", dev: false, force: "needed; not on hot path",
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      advisoryClient: { async fetchBulk() { return { minimist: [{ id: "GHSA-x", severity: "critical" }] }; } },
+      identity: noIdentity,
+      now: () => new Date("2026-05-28"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    const e = readLedger(dir).minimist;
+    assert.equal(e.reason, "needed; not on hot path");
+    assert.equal(e.risk, "high", "block-level CVE finding should bump risk to high");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cveAtInstall=block: moderate advisory stays a warn (below default 'high' threshold)", async () => {
+  const dir = setup();
+  writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ cveAtInstall: "block" }));
+  try {
+    const code = await runSafeAdd({
+      spec: "minimist", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      advisoryClient: { async fetchBulk() { return { minimist: [{ id: "GHSA-x", severity: "moderate" }] }; } },
+      identity: noIdentity,
+      now: () => new Date("2026-05-28"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.equal(readLedger(dir).minimist.approvedVersion, "1.0.0");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("runSafeAdd records addedBy from the injected git identity", async () => {
   const dir = setup();
   try {

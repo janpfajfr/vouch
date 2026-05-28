@@ -1,8 +1,12 @@
 import type { Config } from "./config.js";
+import { SEVERITY_RANK, type Severity as CveSeverity } from "./config.js";
 import type { Risk } from "./ledger.js";
+import type { Advisory } from "./advisories.js";
 
 export type Severity = "ok" | "warn" | "block";
 export interface Finding { level: Severity; message: string; }
+
+function sevRank(s: CveSeverity): number { return SEVERITY_RANK.indexOf(s); }
 
 export const DANGEROUS_SCRIPTS = [
   "preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly",
@@ -31,6 +35,22 @@ export function checkInstallScripts(scripts: Record<string, string>, cfg: Config
 export function checkDeprecated(deprecated: boolean): Finding {
   if (!deprecated) return { level: "ok", message: "Not deprecated." };
   return { level: "warn", message: "package is marked deprecated by its publisher" };
+}
+
+/** Turn a known-CVE list into a finding shaped by cveAtInstall + cveAtInstallMinSeverity.
+ *  "off" or empty → ok. "warn" → warn for any. "block" → block iff any advisory ≥ threshold;
+ *  below-threshold advisories still warn. */
+export function checkKnownCve(pkg: string, found: Advisory[], cfg: Config): Finding {
+  if (cfg.cveAtInstall === "off" || found.length === 0) return { level: "ok", message: "No known advisories." };
+  const list = found.map((a) => `${a.id} (${a.severity})`).join(", ");
+  const noun = found.length === 1 ? "advisory" : "advisories";
+  if (cfg.cveAtInstall === "block") {
+    const maxSev = found.reduce<CveSeverity>((m, a) => sevRank(a.severity) > sevRank(m) ? a.severity : m, "low");
+    if (sevRank(maxSev) >= sevRank(cfg.cveAtInstallMinSeverity)) {
+      return { level: "block", message: `known ${maxSev}-severity ${noun}: ${list}` };
+    }
+  }
+  return { level: "warn", message: `known ${noun}: ${list} — \`check\` will block until acknowledged: vouch acknowledge ${pkg} --reason "<why>".` };
 }
 
 export function overallRisk(findings: Finding[]): Risk {

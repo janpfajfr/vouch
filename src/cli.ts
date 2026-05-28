@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
 import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
-import { checkVersionAge, checkInstallScripts, checkDeprecated, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
+import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
@@ -98,33 +98,32 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   const o = outputOpts();
   const notes: string[] = [];
 
-  let risk: Risk = "low";
   const blocking: string[] = [];
+  const findings: Finding[] = [];
   if (isAllowlisted(name, cfg.allowScopedPackages)) {
     notes.push(`"${name}" matches allowScopedPackages; risk gate skipped.`);
   } else {
-    const findings: Finding[] = [
+    findings.push(
       checkVersionAge(meta.publishedAt, opts.now(), cfg),
       checkInstallScripts(meta.scripts, cfg),
       checkDeprecated(meta.deprecated),
-    ];
-    for (const f of findings) {
-      if (f.level === "block") blocking.push(f.message);
-      else if (f.level === "warn") notes.push(f.message);
-    }
-    risk = overallRisk(findings);
+    );
   }
 
-  // Surface known advisories at install time so `check` is never the first messenger.
-  // Informational only (warn, not block) and fail-open: an unreachable service is silent.
-  if (opts.advisoryClient) {
+  // Advisory finding — fed into the same findings list so it shapes risk + routing. Evaluated
+  // even when allowlisted (a known CVE on a trusted scope is still worth flagging).
+  // Shape by cfg.cveAtInstall: "warn"→note, "block"→blocks at/above the severity threshold,
+  // "off"→skip the fetch entirely. Fail-open: an unreachable service returns null and stays silent.
+  if (opts.advisoryClient && cfg.cveAtInstall !== "off") {
     const live = await opts.advisoryClient.fetchBulk({ [name]: [meta.version] });
     const found = live?.[name] ?? [];
-    if (found.length > 0) {
-      const list = found.map((a) => `${a.id} (${a.severity})`).join(", ");
-      notes.push(`known ${found.length === 1 ? "advisory" : "advisories"}: ${list} — \`check\` will block until acknowledged: vouch acknowledge ${name} --reason "<why>".`);
-    }
+    findings.push(checkKnownCve(name, found, cfg));
   }
+  for (const f of findings) {
+    if (f.level === "block") blocking.push(f.message);
+    else if (f.level === "warn") notes.push(f.message);
+  }
+  const risk: Risk = overallRisk(findings);
 
   if (blocking.length > 0 && !opts.force) {
     opts.err(statusHeader("warn", "Dependency needs review", o));

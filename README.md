@@ -120,7 +120,8 @@ usual, and `check` passes because the committed ledger already covers every depe
 
 1. Reviews it: **version age** and **install-time scripts** (blocked by default).
 2. Warns you **right then** if the version already has a **known CVE** — so `check` is never
-   the first messenger.
+   the first messenger. Configurable: `cveAtInstall: "warn"` (default), `"block"` (refuse to
+   install advisories at or above `cveAtInstallMinSeverity`, default `"high"`), or `"off"`.
 3. Installs it and records the decision (version, risk, who added it and why) in the ledger.
 
 **In CI** (`vouch check`) — three states per dependency: *recorded* (ok), *unrecorded*
@@ -199,6 +200,8 @@ All optional; sensible defaults apply.
   "requireCooldownConfigured": false,
   "versionDrift": "warn",
   "requirePinned": "off",
+  "cveAtInstall": "warn",
+  "cveAtInstallMinSeverity": "high",
   "allowScopedPackages": ["@your-org/*"],
   "packageManager": "auto"
 }
