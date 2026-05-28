@@ -6,15 +6,19 @@ export type PM = "pnpm" | "npm" | "yarn";
 
 export function detectPM(cwd: string, configured: PackageManager): PM {
   if (configured !== "auto") return configured;
-  // The Corepack-style `packageManager` field in package.json is the authoritative
-  // declaration of which PM this project uses. Take it as the strongest signal.
+  // No signal at all (fresh repo) → npm, the Node baseline; safer than guessing pnpm.
+  return detectPMFromSignals(cwd) ?? "npm";
+}
+
+/** Returns a confidently-detected PM (Corepack field or lockfile present) or null. Used by
+ *  `vouch init` to decide whether to seed `packageManager` in the generated config. */
+export function detectPMFromSignals(cwd: string): PM | null {
   const declared = readPackageManagerField(cwd);
   if (declared) return declared;
   if (existsSync(join(cwd, "pnpm-lock.yaml"))) return "pnpm";
   if (existsSync(join(cwd, "yarn.lock"))) return "yarn";
   if (existsSync(join(cwd, "package-lock.json"))) return "npm";
-  // No signal at all (fresh repo). npm is the Node baseline; safer than guessing pnpm.
-  return "npm";
+  return null;
 }
 
 function readPackageManagerField(cwd: string): PM | null {

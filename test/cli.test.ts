@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSafeAdd, parseSpec, runAcknowledge, helpText, parseAddArgs } from "../src/cli.js";
+import { runSafeAdd, parseSpec, runAcknowledge, helpText, parseAddArgs, runInit, SCHEMA_URL } from "../src/cli.js";
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
@@ -372,6 +372,51 @@ test("parseAddArgs: more than one package positional is an error", () => {
 
 test("parseAddArgs: no package yields the no-package marker", () => {
   assert.equal(parseAddArgs(["--force-with-reason", "x"]).error, "no-package");
+});
+
+test("runInit: writes .safe-dep.json with $schema when none exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    const code = runInit({ cwd: dir, log: () => {}, err: () => {} });
+    assert.equal(code, 0);
+    const written = JSON.parse(readFileSync(join(dir, ".safe-dep.json"), "utf8"));
+    assert.equal(written.$schema, SCHEMA_URL);
+    assert.ok(!("packageManager" in written), "no PM signal → don't seed packageManager");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("runInit: seeds packageManager when a confident signal exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ packageManager: "pnpm@9.5.0" }));
+    runInit({ cwd: dir, log: () => {}, err: () => {} });
+    assert.equal(JSON.parse(readFileSync(join(dir, ".safe-dep.json"), "utf8")).packageManager, "pnpm");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("runInit: adds $schema to an existing config, preserving other keys", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block", packageManager: "npm" }));
+    runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const c = JSON.parse(readFileSync(join(dir, ".safe-dep.json"), "utf8"));
+    assert.equal(c.$schema, SCHEMA_URL);
+    assert.equal(c.versionDrift, "block");
+    assert.equal(c.packageManager, "npm");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("runInit: is idempotent when $schema is already present", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    const before = JSON.stringify({ $schema: SCHEMA_URL, versionDrift: "block" });
+    writeFileSync(join(dir, ".safe-dep.json"), before);
+    const logs: string[] = [];
+    const code = runInit({ cwd: dir, log: (s) => logs.push(s), err: () => {} });
+    assert.equal(code, 0);
+    assert.ok(logs.some((s) => /already/i.test(s)));
+    assert.equal(readFileSync(join(dir, ".safe-dep.json"), "utf8"), before);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("parseAddArgs: empty or flag-like reason is rejected", () => {

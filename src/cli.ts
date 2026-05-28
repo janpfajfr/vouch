@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
 import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
-import { detectPM, installArgs, cooldownConfigured, type PM } from "./pm.js";
+import { detectPM, detectPMFromSignals, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
 import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
@@ -32,6 +32,8 @@ export function parseAddArgs(args: string[]): AddArgs {
   return { spec: positionals[0], dev, force };
 }
 
+export const SCHEMA_URL = "https://raw.githubusercontent.com/janpfajfr/vouch/main/schema.json";
+
 export function helpText(): string {
   return [
     "vouch — a dependency-decision ledger: every dependency is recorded, explained, and reviewable in the PR.",
@@ -40,6 +42,7 @@ export function helpText(): string {
     '  vouch <package> [-D] [--force-with-reason "<reason>"]   Review, install, and record a dependency',
     "  vouch check                                             CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift",
     '  vouch acknowledge <package> --reason "<why>"            Knowingly accept a dependency\'s current advisories (CVE drift)',
+    "  vouch init                                              Bootstrap .safe-dep.json with $schema (and detected packageManager)",
     "  vouch --help | --version",
     "",
     "Flags:",
@@ -54,6 +57,52 @@ export function helpText(): string {
     "vouch records decisions; the PR/MR review is the approval. The ledger lives at",
     ".security/dependency-approvals.json and is meant to be committed.",
   ].join("\n");
+}
+
+export interface InitOptions {
+  cwd: string;
+  log: (s: string) => void;
+  err: (s: string) => void;
+}
+
+/** Bootstraps .safe-dep.json with the $schema reference (so editors offer autocomplete +
+ *  validation) and a confidently-detected packageManager if there is a signal. Idempotent:
+ *  if the schema reference is already present, it just reports that. */
+export function runInit(opts: InitOptions): number {
+  const path = join(opts.cwd, ".safe-dep.json");
+  const o = outputOpts();
+  let existing: Record<string, unknown> | null = null;
+  try {
+    existing = JSON.parse(readFileSync(path, "utf8"));
+  } catch { existing = null; }
+
+  if (existing) {
+    if (typeof existing.$schema === "string") {
+      opts.log(statusHeader("info", "Already initialized", o));
+      opts.log("");
+      opts.log("  .safe-dep.json already references the schema.");
+      return 0;
+    }
+    const updated = { $schema: SCHEMA_URL, ...existing };
+    writeFileSync(path, JSON.stringify(updated, null, 2) + "\n");
+    opts.log(statusHeader("success", "Added $schema to .safe-dep.json", o));
+    opts.log("");
+    opts.log("  Existing keys preserved. Your editor will now offer autocomplete + validation.");
+    return 0;
+  }
+
+  // Fresh init: write a one-line config with the schema reference. Seed packageManager only
+  // when detection is confident (Corepack field or lockfile) — otherwise leave it implicit.
+  const cfg: Record<string, unknown> = { $schema: SCHEMA_URL };
+  const pm = detectPMFromSignals(opts.cwd);
+  if (pm) cfg.packageManager = pm;
+  writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
+  opts.log(statusHeader("success", "Initialized .safe-dep.json", o));
+  opts.log("");
+  opts.log("  Schema referenced — your editor will offer autocomplete + validation as you type.");
+  if (pm) opts.log(`  Detected packageManager: "${pm}"`);
+  opts.log("  All other config uses defaults; see the README for the full reference.");
+  return 0;
 }
 
 function readVersion(): string {
@@ -220,6 +269,10 @@ async function main(argv: string[]): Promise<number> {
     if (shouldShowWordmark(o)) console.log(wordmark(o) + "\n");
     console.log(helpText());
     return 0;
+  }
+
+  if (cmd === "init") {
+    return runInit({ cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
 
   if (cmd === "check") {
