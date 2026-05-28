@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/janpfajfr/vouch/main/schema.json",
+  "title": "vouch — .safe-dep.json",
+  "description": "Configuration for vouch. All keys are optional; defaults apply when omitted. Editors that respect $schema (VS Code, WebStorm, lspconfig) will offer autocomplete + validation while you type.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this schema. Enables editor autocomplete + validation."
+    },
+    "packageManager": {
+      "type": "string",
+      "enum": ["auto", "pnpm", "npm", "yarn"],
+      "default": "auto",
+      "description": "Which package manager vouch invokes when adding deps. 'auto' reads the Corepack packageManager field, then sniffs lockfiles, then falls back to npm."
+    },
+    "allowScopedPackages": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Glob-like patterns (only '*' is special). Matched packages bypass the install-time risk gate — e.g. ['@your-org/*'] for trusted internal packages."
+    },
+    "minimumVersionAgeHours": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 24,
+      "description": "A new version younger than this many hours is blocked at install time."
+    },
+    "warnVersionAgeHours": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 168,
+      "description": "A version younger than this many hours (but past the minimum) is warned about at install time. Default = 7 days."
+    },
+    "blockInstallScripts": {
+      "type": "boolean",
+      "default": true,
+      "description": "Block packages that ship preinstall/install/postinstall/prepare scripts. Override with --force-with-reason."
+    },
+    "requireCooldownConfigured": {
+      "type": "boolean",
+      "default": false,
+      "description": "Warn when the project's package manager has no release-age cooldown configured (e.g. pnpm minimumReleaseAge, npm min-release-age)."
+    },
+    "versionDrift": {
+      "type": "string",
+      "enum": ["warn", "block", "off"],
+      "default": "warn",
+      "description": "What `vouch check` does when a recorded approvedVersion no longer satisfies the package.json range — i.e. a decision was made for a version you no longer ship. Compared against the manifest range (no lockfile)."
+    },
+    "requirePinned": {
+      "type": "string",
+      "enum": ["warn", "block", "off"],
+      "default": "off",
+      "description": "Opt-in pinning policy. 'warn' or 'block' on recorded deps that use a range (^, ~, ...) instead of an exact version. Default off to avoid flooding typical ^-range projects."
+    },
+    "cveAtInstall": {
+      "type": "string",
+      "enum": ["warn", "block", "off"],
+      "default": "warn",
+      "description": "What `vouch <pkg>` does on a known advisory at install time. 'warn' surfaces a note; 'block' refuses to install when severity ≥ cveAtInstallMinSeverity; 'off' skips the check entirely. Fail-open: an unreachable advisory service is silent."
+    },
+    "cveAtInstallMinSeverity": {
+      "type": "string",
+      "enum": ["low", "moderate", "high", "critical"],
+      "default": "high",
+      "description": "Minimum advisory severity that blocks when cveAtInstall is 'block'. Lower severities still warn."
+    }
+  }
+}

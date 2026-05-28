@@ -6,17 +6,22 @@
   "bin": {
     "vouch": "dist/src/cli.js"
   },
-  "files": ["dist/src", "assets"],
-  "engines": { "node": ">=18" },
+  "files": [
+    "dist/src",
+    "assets",
+    "schema.json"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "test": "tsc && node --test 'dist/test/**/*.js'",
     "prepublishOnly": "npm run build"
   },
-  "dependencies": {},
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
   },
   "license": "MIT"
 }
