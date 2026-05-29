@@ -6,9 +6,9 @@ import { loadConfig, isAllowlisted } from "./config.js";
 import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
 import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { detectPM, detectPMFromSignals, installArgs, cooldownConfigured, type PM } from "./pm.js";
-import { NpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
+import { createNpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
-import { NpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
+import { createNpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
 import { gitIdentity } from "./identity.js";
 import { wordmark, shouldShowWordmark, statusHeader, type OutputOpts } from "./art.js";
 
@@ -336,7 +336,7 @@ async function main(argv: string[]): Promise<number> {
     const cfg = await loadConfig(cwd);
     const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
     const ledger = readLedger(cwd);
-    const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, new NpmAdvisoryClient());
+    const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, createNpmAdvisoryClient());
     if (violations.length === 0) {
       console.log(statusHeader("success", "Dependency review passed", o));
       console.log("");
@@ -362,7 +362,7 @@ async function main(argv: string[]): Promise<number> {
     const pkg = rest.find((a, i) => !skip.has(i) && !a.startsWith("-"));
     if (!pkg) { console.error('Usage: vouch acknowledge <package> --reason "<why>"'); return 1; }
     if (reason.trim() === "" || reason.startsWith("-")) { console.error('acknowledge requires --reason "<why>" — the risk you are knowingly accepting.'); return 1; }
-    return runAcknowledge({ pkg, reason, identity: () => gitIdentity(), client: new NpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
+    return runAcknowledge({ pkg, reason, identity: () => gitIdentity(), client: createNpmAdvisoryClient(), now: () => new Date(), cwd, log: (s) => console.log(s), err: (s) => console.error(s) });
   }
 
   const parsed = parseAddArgs(args);
@@ -375,9 +375,9 @@ async function main(argv: string[]): Promise<number> {
 
   return runSafeAdd({
     spec, dev, force,
-    registry: new NpmRegistryClient(),
+    registry: createNpmRegistryClient(),
     installer: realInstaller(),
-    advisoryClient: new NpmAdvisoryClient(),
+    advisoryClient: createNpmAdvisoryClient(),
     identity: () => gitIdentity(),
     now: () => new Date(),
     cwd,
