@@ -10,6 +10,8 @@ A **dependency-decision ledger** for Node.js projects and coding agents.
 enters your repo was **recorded, explained, and reviewable in the pull request** — a memory
 and conscience for your `package.json`.
 
+![vouch demo](https://raw.githubusercontent.com/janpfajfr/vouch/main/assets/demo.gif)
+
 ---
 
 ## Contents
