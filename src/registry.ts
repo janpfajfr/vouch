@@ -34,8 +34,6 @@ export function normalizeMetadata(name: string, versionSpec: string | undefined,
   };
 }
 
-/** The real registry client — fetches package metadata from npm. Stateless, so
- *  it's a factory returning a plain object; tests pass their own RegistryClient. */
 export function createNpmRegistryClient(): RegistryClient {
   return {
     async fetchMetadata(name, versionSpec) {

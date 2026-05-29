@@ -30,8 +30,6 @@ export interface AdvisoryClient {
   fetchBulk(pkgVersions: Record<string, string[]>): Promise<Record<string, Advisory[]> | null>;
 }
 
-/** The real advisory client — hits the npm bulk-advisory endpoint. Stateless, so
- *  it's a factory returning a plain object; tests pass their own AdvisoryClient. */
 export function createNpmAdvisoryClient(): AdvisoryClient {
   return {
     async fetchBulk(pkgVersions) {
