@@ -1,0 +1,59 @@
+{
+  "name": "@vouchjs/vouch",
+  "version": "0.1.0",
+  "description": "A dependency-decision ledger: every dependency is recorded, explained, and reviewable in the PR — for Node.js projects and coding agents.",
+  "type": "module",
+  "keywords": [
+    "dependencies",
+    "dependency-review",
+    "supply-chain",
+    "security",
+    "npm",
+    "audit",
+    "ci",
+    "governance",
+    "cve",
+    "agents"
+  ],
+  "homepage": "https://github.com/janpfajfr/vouch#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janpfajfr/vouch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/janpfajfr/vouch/issues"
+  },
+  "author": "janpfajfr (https://github.com/janpfajfr)",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "vouch": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "schema.json"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test 'dist/test/**/*.js'",
+    "prepublishOnly": "npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "license": "MIT"
+}

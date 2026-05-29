@@ -1,0 +1,12 @@
+dependency-security:
+  image: node:22
+  rules:
+    - changes:
+        - package.json
+        - pnpm-lock.yaml
+        - yarn.lock
+        - package-lock.json
+        - .safe-dep.json
+        - .security/dependency-approvals.json
+  script:
+    - npx @vouchjs/vouch check

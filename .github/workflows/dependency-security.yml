@@ -1,0 +1,20 @@
+name: Dependency Security
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "yarn.lock"
+      - "package-lock.json"
+      - ".safe-dep.json"
+      - ".security/dependency-approvals.json"
+jobs:
+  dependency-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm run build
+      - run: node dist/src/cli.js check

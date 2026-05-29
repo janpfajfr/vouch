@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="vouch">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b0a4a"/>
+      <stop offset="1" stop-color="#0b0220"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff2e97"/>
+      <stop offset="1" stop-color="#ff8a3d"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffc6e6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <circle cx="256" cy="384" r="150" fill="url(#sun)"/>
+  <g stroke="#00e5ff" stroke-width="2" opacity="0.55">
+    <line x1="0" y1="372" x2="512" y2="372"/>
+    <line x1="0" y1="404" x2="512" y2="404"/>
+    <line x1="0" y1="452" x2="512" y2="452"/>
+    <line x1="0" y1="512" x2="512" y2="512"/>
+    <line x1="256" y1="372" x2="16" y2="512"/>
+    <line x1="256" y1="372" x2="168" y2="512"/>
+    <line x1="256" y1="372" x2="344" y2="512"/>
+    <line x1="256" y1="372" x2="496" y2="512"/>
+  </g>
+  <text x="256" y="232" text-anchor="middle" font-family="monospace" font-size="104" fill="url(#ink)" font-weight="bold" letter-spacing="6">vouch</text>
+  <text x="256" y="286" text-anchor="middle" font-family="monospace" font-size="22" fill="#cdecff" letter-spacing="6">deps, signed</text>
+</svg>
