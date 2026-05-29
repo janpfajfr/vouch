@@ -30,27 +30,31 @@ export interface AdvisoryClient {
   fetchBulk(pkgVersions: Record<string, string[]>): Promise<Record<string, Advisory[]> | null>;
 }
 
-export class NpmAdvisoryClient implements AdvisoryClient {
-  async fetchBulk(pkgVersions: Record<string, string[]>): Promise<Record<string, Advisory[]> | null> {
-    if (Object.keys(pkgVersions).length === 0) return {};
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    try {
-      const url = process.env.VOUCH_ADVISORY_URL ?? "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk";
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(pkgVersions),
-        signal: controller.signal,
-      });
-      if (!res.ok) return null;
-      return normalizeAdvisories(await res.json());
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
+/** The real advisory client — hits the npm bulk-advisory endpoint. Stateless, so
+ *  it's a factory returning a plain object; tests pass their own AdvisoryClient. */
+export function createNpmAdvisoryClient(): AdvisoryClient {
+  return {
+    async fetchBulk(pkgVersions) {
+      if (Object.keys(pkgVersions).length === 0) return {};
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const url = process.env.VOUCH_ADVISORY_URL ?? "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(pkgVersions),
+          signal: controller.signal,
+        });
+        if (!res.ok) return null;
+        return normalizeAdvisories(await res.json());
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
 }
 
 /** Maps the raw npm bulk-advisory response to `{ name: Advisory[] }`. Never throws. */

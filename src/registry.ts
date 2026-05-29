@@ -34,17 +34,21 @@ export function normalizeMetadata(name: string, versionSpec: string | undefined,
   };
 }
 
-export class NpmRegistryClient implements RegistryClient {
-  async fetchMetadata(name: string, versionSpec?: string): Promise<PackageMetadata> {
-    let res: Response;
-    try {
-      res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
-    } catch {
-      throw new RegistryUnavailableError(`Could not reach the npm registry for ${name}.`);
-    }
-    if (res.status === 404) throw new PackageNotFoundError(`Package not found: ${name}`);
-    if (!res.ok) throw new RegistryUnavailableError(`Registry returned ${res.status} for ${name}.`);
-    const doc = (await res.json()) as RawDoc;
-    return normalizeMetadata(name, versionSpec, doc);
-  }
+/** The real registry client — fetches package metadata from npm. Stateless, so
+ *  it's a factory returning a plain object; tests pass their own RegistryClient. */
+export function createNpmRegistryClient(): RegistryClient {
+  return {
+    async fetchMetadata(name, versionSpec) {
+      let res: Response;
+      try {
+        res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
+      } catch {
+        throw new RegistryUnavailableError(`Could not reach the npm registry for ${name}.`);
+      }
+      if (res.status === 404) throw new PackageNotFoundError(`Package not found: ${name}`);
+      if (!res.ok) throw new RegistryUnavailableError(`Registry returned ${res.status} for ${name}.`);
+      const doc = (await res.json()) as RawDoc;
+      return normalizeMetadata(name, versionSpec, doc);
+    },
+  };
 }
