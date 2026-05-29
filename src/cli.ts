@@ -248,6 +248,10 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     notes.push(`${pm} has no release-age cooldown configured.`);
   }
 
+  // We vetted meta.version (resolved from the registry), but the package manager
+  // re-resolves opts.spec independently. For a bare name both resolve "latest", so
+  // they normally match; a dist-tag moving in the gap is a small TOCTOU window. The
+  // ledger records meta.version — the version we actually reviewed.
   const code = await opts.installer.install(pm, installArgs(pm, opts.spec, opts.dev));
   if (code !== 0) { opts.err(`Install failed (exit ${code}); ledger not written.`); return code; }
 
@@ -297,8 +301,10 @@ export async function runAcknowledge(opts: AcknowledgeOptions): Promise<number> 
   return 0;
 }
 
-function outputOpts(): OutputOpts {
-  return { isTTY: Boolean(process.stdout.isTTY), noColor: Boolean(process.env.NO_COLOR), quiet: process.argv.includes("--quiet") };
+/** The single boundary where output context is read from the environment.
+ *  argv is injectable (defaults to process.argv) so it isn't hard-wired to global state. */
+function outputOpts(argv: readonly string[] = process.argv): OutputOpts {
+  return { isTTY: Boolean(process.stdout.isTTY), noColor: Boolean(process.env.NO_COLOR), quiet: argv.includes("--quiet") };
 }
 
 function realInstaller(): Installer {

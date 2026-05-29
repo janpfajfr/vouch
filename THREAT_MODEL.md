@@ -50,6 +50,10 @@ gate.
 - **Per-package vulnerability discovery.** `vouch` records the advisory posture of what you
   recorded and flags drift; it does not *scan* to discover typosquatting or malware. That is
   the job of `npq` / Socket.
+- **Transitive install-time scripts.** The install-script gate inspects only the package you
+  add directly, not its dependency tree. A transitive dependency's `postinstall` is out of
+  scope — pair `vouch` with a package-manager release-age cooldown and, if you need it,
+  deeper per-package scanning.
 - **Who approved the PR.** `vouch` does not verify the reviewer. That is the platform's job,
   enforced by branch protection.
 

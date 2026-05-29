@@ -13,9 +13,15 @@ export interface RegistryClient {
 export class PackageNotFoundError extends Error {}
 export class RegistryUnavailableError extends Error {}
 
+/** The slice of an npm version document vouch actually reads. */
+interface RawVersion {
+  scripts?: Record<string, string>;
+  deprecated?: boolean | string; // npm sets this to a message string when deprecated
+}
+
 interface RawDoc {
   "dist-tags"?: Record<string, string>;
-  versions?: Record<string, any>;
+  versions?: Record<string, RawVersion>;
   time?: Record<string, string>;
 }
 
