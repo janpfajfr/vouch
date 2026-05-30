@@ -19,6 +19,26 @@ test("check exits 1 on unrecorded dependency", () => {
   }
 });
 
+test("check names the actual unrecorded packages in the Next hint (-D for devDeps)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" }, devDependencies: { typescript: "^5" } }));
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, "check"], { cwd: dir, stdio: "pipe", env: { ...process.env, VOUCH_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      (err: NodeJS.ErrnoException & { status?: number; stderr?: Buffer }) => {
+        assert.equal(err.status, 1);
+        const stderr = String(err.stderr);
+        assert.match(stderr, /vouch lodash\b/);        // prod dep named
+        assert.match(stderr, /vouch typescript -D\b/);  // devDep named, with -D
+        assert.doesNotMatch(stderr, /vouch <package>/); // no generic placeholder
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("check exits 0 when ledger covers deps", () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
