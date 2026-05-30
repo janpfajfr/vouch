@@ -6,19 +6,28 @@ import { satisfiesRange, isExactPin } from "./semver.js";
 export interface PackageJsonLike {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 }
 
 export interface CheckViolation { package: string; reason: string; }
 
-/** Direct dependencies (prod + dev) as a name → range map. The single place that
- *  enumerates package.json deps, so every check sees the same set. */
-export function directDeps(pkg: PackageJsonLike): Record<string, string> {
-  return { ...pkg.dependencies, ...pkg.devDependencies };
+/** Direct dependencies as a name → range map — the single place that enumerates
+ *  package.json deps, so every check sees the same set. Always includes prod, dev,
+ *  and optional (all install by default). peerDependencies are included only when
+ *  cfg.checkPeerDependencies is set (they're typically host-provided). */
+export function directDeps(pkg: PackageJsonLike, cfg?: { checkPeerDependencies: boolean }): Record<string, string> {
+  return {
+    ...pkg.dependencies,
+    ...pkg.devDependencies,
+    ...pkg.optionalDependencies,
+    ...(cfg?.checkPeerDependencies ? pkg.peerDependencies : {}),
+  };
 }
 
-export function runCheck(pkg: PackageJsonLike, ledger: Ledger, _cfg: Config): CheckViolation[] {
+export function runCheck(pkg: PackageJsonLike, ledger: Ledger, cfg: Config): CheckViolation[] {
   const violations: CheckViolation[] = [];
-  for (const name of Object.keys(directDeps(pkg))) {
+  for (const name of Object.keys(directDeps(pkg, cfg))) {
     const entry = ledger[name];
     if (!entry) {
       violations.push({ package: name, reason: "missing ledger entry" });
@@ -36,9 +45,9 @@ export interface VersionDrift { package: string; recorded: string; range: string
 /** Direct deps whose recorded version no longer satisfies the package.json range.
  *  Compares against package.json ranges only (no lockfile). Unparseable ranges are
  *  skipped (satisfiesRange returns null) so they never produce a false drift. */
-export function detectVersionDrift(pkg: PackageJsonLike, ledger: Ledger): VersionDrift[] {
+export function detectVersionDrift(pkg: PackageJsonLike, ledger: Ledger, cfg?: { checkPeerDependencies: boolean }): VersionDrift[] {
   const drift: VersionDrift[] = [];
-  for (const [name, range] of Object.entries(directDeps(pkg))) {
+  for (const [name, range] of Object.entries(directDeps(pkg, cfg))) {
     const entry = ledger[name];
     if (!entry) continue; // unrecorded is already a violation in runCheck
     if (satisfiesRange(entry.approvedVersion, range) === false) {
@@ -56,9 +65,9 @@ export interface Unpinned { package: string; range: string; recorded: string; }
 
 /** Recorded direct deps whose package.json range is not an exact pin.
  *  Skips unrecorded deps (already a violation in runCheck). */
-export function detectUnpinned(pkg: PackageJsonLike, ledger: Ledger): Unpinned[] {
+export function detectUnpinned(pkg: PackageJsonLike, ledger: Ledger, cfg?: { checkPeerDependencies: boolean }): Unpinned[] {
   const out: Unpinned[] = [];
-  for (const [name, range] of Object.entries(directDeps(pkg))) {
+  for (const [name, range] of Object.entries(directDeps(pkg, cfg))) {
     const entry = ledger[name];
     if (!entry) continue;
     if (!isExactPin(range)) out.push({ package: name, range, recorded: entry.approvedVersion });
@@ -80,21 +89,21 @@ export async function runCheckWithCve(
   const warnings: string[] = [];
 
   if (cfg.versionDrift !== "off") {
-    for (const d of detectVersionDrift(pkg, ledger)) {
+    for (const d of detectVersionDrift(pkg, ledger, cfg)) {
       if (cfg.versionDrift === "block") violations.push({ package: d.package, reason: versionDriftMessage(d) });
       else warnings.push(`${d.package} — ${versionDriftMessage(d)}`);
     }
   }
 
   if (cfg.requirePinned !== "off") {
-    for (const u of detectUnpinned(pkg, ledger)) {
+    for (const u of detectUnpinned(pkg, ledger, cfg)) {
       if (cfg.requirePinned === "block") violations.push({ package: u.package, reason: unpinnedMessage(u) });
       else warnings.push(`${u.package} — ${unpinnedMessage(u)}`);
     }
   }
 
   const pkgVersions: Record<string, string[]> = {};
-  for (const name of Object.keys(directDeps(pkg))) {
+  for (const name of Object.keys(directDeps(pkg, cfg))) {
     const entry = ledger[name];
     if (entry) pkgVersions[name] = [entry.approvedVersion];
   }

@@ -150,7 +150,9 @@ usual, and `check` passes because the committed ledger already covers every depe
 **In CI** (`vouch check`) — three states per dependency: *recorded* (ok), *unrecorded*
 (blocked), or *needs review* (blocked). It fails when:
 
-- a dependency in `package.json` has **no ledger entry** — added without `vouch`;
+- a direct dependency in `package.json` has **no ledger entry** — added without `vouch`
+  (covers `dependencies`, `devDependencies`, and `optionalDependencies`; `peerDependencies`
+  too when `checkPeerDependencies` is enabled);
 - a dependency **gained a CVE** that no human has acknowledged;
 - a **high-risk** entry has **no `reason`** recorded for the reviewer to judge;
 - **version drift** — a recorded version no longer satisfies the `package.json` range
@@ -235,6 +237,7 @@ export default defineConfig({
   // CI gate — `vouch check`
   versionDrift: "warn",              // "warn" | "block" | "off"
   requirePinned: "off",              // "warn" | "block" | "off"
+  checkPeerDependencies: false,      // also gate peerDependencies (prod/dev/optional always gated)
 
   // CVE handling at add time
   cveAtInstall: "warn",              // "warn" | "block" | "off"

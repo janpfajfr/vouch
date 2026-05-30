@@ -20,6 +20,10 @@ export interface Config {
   packageManager: PackageManager;
   versionDrift: CheckMode;
   requirePinned: CheckMode;
+  /** Also gate peerDependencies in `vouch check`. Off by default: peers are usually
+   *  host-provided contracts (a library declaring its required React, say), so gating
+   *  them can create friction. optionalDependencies are always gated (they install). */
+  checkPeerDependencies: boolean;
   /** What `vouch <pkg>` does on a known advisory at install time.
    *  "warn" (default): a note; "block": block at or above cveAtInstallMinSeverity; "off": skip. */
   cveAtInstall: CheckMode;
@@ -36,6 +40,7 @@ export const DEFAULT_CONFIG: Config = {
   packageManager: "auto",
   versionDrift: "warn",
   requirePinned: "off",
+  checkPeerDependencies: false,
   cveAtInstall: "warn",
   cveAtInstallMinSeverity: "high",
 };
