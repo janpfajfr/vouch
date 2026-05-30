@@ -371,8 +371,19 @@ async function main(argv: string[]): Promise<number> {
     for (const w of warnings) console.error(`  - ${w}`);
     for (const v of violations) console.error(`  - ${v.package}: ${v.reason}`);
     console.error("");
-    console.error("  Next:");
-    console.error("    vouch <package>");
+    // Name the actual unrecorded packages in the fix-it hint (with -D for devDeps),
+    // rather than a generic `vouch <package>`. Other violation types (CVE/version
+    // drift, unexplained high-risk) carry their own fix in the reason line above.
+    const unrecorded = violations.filter((v) => v.reason === "missing ledger entry");
+    if (unrecorded.length > 0) {
+      console.error(`  Next — record the unrecorded dependenc${unrecorded.length === 1 ? "y" : "ies"}:`);
+      for (const v of unrecorded) {
+        const dev = Boolean(pkg.devDependencies && v.package in pkg.devDependencies);
+        console.error(`    vouch ${v.package}${dev ? " -D" : ""}`);
+      }
+    } else {
+      console.error("  Next: resolve each item above — the fix is shown on its line.");
+    }
     return 1;
   }
 
