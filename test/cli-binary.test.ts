@@ -46,6 +46,27 @@ test("high-risk with a reason passes check (no separate approval step)", () => {
   }
 });
 
+test("check fails CLEANLY on a malformed ledger — branded message, no stack trace", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { lodash: "^4" } }));
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"), "{ not json");
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, "check"], { cwd: dir, stdio: "pipe", env: { ...process.env, VOUCH_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      (err: NodeJS.ErrnoException & { status?: number; stderr?: Buffer }) => {
+        assert.equal(err.status, 1);
+        const stderr = String(err.stderr);
+        assert.match(stderr, /not valid JSON/);
+        assert.doesNotMatch(stderr, /\bat .*\.js:\d+/); // fail-closed, but no raw Node stack trace
+        return true;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("acknowledge without --reason exits 1", () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {

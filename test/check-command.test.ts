@@ -26,6 +26,25 @@ test("checks devDependencies too", () => {
   assert.equal(v[0].package, "typescript");
 });
 
+test("gates optionalDependencies (they install by default)", () => {
+  const v = runCheck({ optionalDependencies: { fsevents: "^2" } }, {}, DEFAULT_CONFIG);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].package, "fsevents");
+  assert.match(v[0].reason, /missing ledger entry/i);
+});
+
+test("does NOT gate peerDependencies by default", () => {
+  const v = runCheck({ peerDependencies: { react: "^18" } }, {}, DEFAULT_CONFIG);
+  assert.deepEqual(v, []);
+});
+
+test("gates peerDependencies when checkPeerDependencies is enabled", () => {
+  const cfg = { ...DEFAULT_CONFIG, checkPeerDependencies: true };
+  const v = runCheck({ peerDependencies: { react: "^18" } }, {}, cfg);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].package, "react");
+});
+
 test("high-risk with a reason passes (recorded + explained)", () => {
   const ledger: Ledger = { esbuild: { ...base, risk: "high", reason: "bundler" } };
   const v = runCheck({ dependencies: { esbuild: "^1.0.0" } }, ledger, DEFAULT_CONFIG);

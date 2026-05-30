@@ -95,6 +95,7 @@ function settingsBlock(pm: PM | "auto"): string[] {
     "  // CI gate — `vouch check`",
     `  versionDrift: "warn",            // "warn" | "block" | "off"`,
     `  requirePinned: "off",            // "warn" | "block" | "off"`,
+    "  checkPeerDependencies: false,    // also gate peerDependencies (prod/dev/optional always gated)",
     "",
     "  // CVE handling at add time",
     `  cveAtInstall: "warn",            // "warn" | "block" | "off"`,
@@ -160,6 +161,21 @@ export function runInit(opts: InitOptions): number {
   if (detectedPM) opts.log(`  Detected packageManager: "${detectedPM}"`);
   else opts.log(`  No PM signal detected; packageManager left as "auto" (falls back to npm).`);
   return 0;
+}
+
+/** Read + parse the project's package.json with clean, branded errors (no raw stack trace). */
+function readPackageJson(cwd: string): { dependencies?: Record<string, string>; devDependencies?: Record<string, string>; optionalDependencies?: Record<string, string>; peerDependencies?: Record<string, string> } {
+  let raw: string;
+  try {
+    raw = readFileSync(join(cwd, "package.json"), "utf8");
+  } catch {
+    throw new Error("No package.json in the current directory.");
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid package.json: not valid JSON.");
+  }
 }
 
 function readVersion(): string {
@@ -340,7 +356,7 @@ async function main(argv: string[]): Promise<number> {
 
   if (cmd === "check") {
     const cfg = await loadConfig(cwd);
-    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
+    const pkg = readPackageJson(cwd);
     const ledger = readLedger(cwd);
     const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, createNpmAdvisoryClient());
     if (violations.length === 0) {
@@ -394,5 +410,15 @@ async function main(argv: string[]): Promise<number> {
 
 const invokedDirectly = process.argv[1] && import.meta.url === `file://${realpathSync(process.argv[1])}`;
 if (invokedDirectly) {
-  main(process.argv.slice(2)).then((code) => process.exit(code));
+  main(process.argv.slice(2))
+    .then((code) => process.exit(code))
+    .catch((e) => {
+      // Fail closed, but cleanly: a malformed ledger/package.json/config should read
+      // as a branded error, never a raw Node stack trace.
+      const o = outputOpts();
+      console.error(statusHeader("blocked", "vouch error", o));
+      console.error("");
+      console.error(`  ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    });
 }
