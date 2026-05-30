@@ -50,8 +50,8 @@ A dependency added without `vouch` fails CI:
 
   - axios: missing ledger entry
 
-  Next:
-    vouch <package>
+  Next — record the unrecorded dependency:
+    vouch axios
 ```
 
 Adding one with `vouch` records the decision (and blocks risky packages until you say why):
