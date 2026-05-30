@@ -161,6 +161,11 @@ usual, and `check` passes because the committed ledger already covers every depe
 - **pinning** — an opt-in `requirePinned` (`"warn"`/`"block"`, default `"off"`) flags deps
   that use a range instead of an exact version, suggesting the recorded version to pin to.
 
+> **Scope:** `vouch check` governs the `package.json` in the directory it runs from, covering
+> `dependencies`, `devDependencies`, and `optionalDependencies` (plus `peerDependencies` when
+> `checkPeerDependencies` is on). **Monorepos:** it does not yet walk workspace manifests — run
+> `check` per workspace for now; first-class workspace support is on the roadmap.
+
 ---
 
 ## vouch records; the PR review approves
@@ -300,6 +305,13 @@ asynchronously and accountably.
 Not a scanner. Deep per-package analysis (typosquatting, behavioral) is the job of tools like
 `npq` and Socket. We don't *scan* for CVEs to discover them — we record the advisory posture of
 what you recorded and flag **drift** after the fact. `vouch` owns **provenance and enforcement**.
+
+Not a replacement for your package manager's native defenses, either. Modern versions ship
+install-time gates — pnpm's `minimumReleaseAge` (default on in pnpm 11), Yarn's
+`npmMinimalAgeGate`, npm's release-age controls. `vouch` **complements** them: those gate *what*
+installs; `vouch` records *who decided, and why*, where the PR can see it — the one thing none of
+them do. On package-manager versions without those defaults (e.g. pnpm 9), `vouch`'s install-time
+review is the gate you'd otherwise lack.
 
 ## Zero dependencies
 
