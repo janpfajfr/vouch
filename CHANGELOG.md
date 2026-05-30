@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-30
+
+### Fixed
+
+- `vouch check` now names the actual unrecorded package(s) in its "Next" hint —
+  e.g. `vouch axios`, or `vouch typescript -D` for a devDependency — instead of a
+  generic `vouch <package>` placeholder.
+
 ## [0.1.0] - 2026-05-29
 
 Initial public release as `@vouchjs/vouch`.
@@ -25,5 +33,6 @@ Initial public release as `@vouchjs/vouch`.
 - `AGENTS.md` guidance so coding agents record (and do not self-authorize) dependency decisions.
 - Zero runtime dependencies; Node.js 18+.
 
-[Unreleased]: https://github.com/janpfajfr/vouch/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/janpfajfr/vouch/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/janpfajfr/vouch/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/janpfajfr/vouch/releases/tag/v0.1.0

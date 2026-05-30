@@ -1,6 +1,6 @@
 {
   "name": "@vouchjs/vouch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A dependency-decision ledger: every dependency is recorded, explained, and reviewable in the PR — for Node.js projects and coding agents.",
   "type": "module",
   "keywords": [
