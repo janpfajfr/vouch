@@ -1,8 +1,9 @@
+// src/ledger.ts
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { ledgerKey } from "./spec.js";
 
 export type Risk = "low" | "medium" | "high";
-
 export type CveSeverity = "low" | "moderate" | "high" | "critical";
 
 export interface AcknowledgedAdvisory {
@@ -18,7 +19,8 @@ export interface CveSnapshot {
 }
 
 export interface LedgerEntry {
-  approvedVersion: string;
+  name: string;          // denormalized from the key — entry is self-describing
+  version: string;       // was approvedVersion; the key already says "approved"
   addedAt: string;
   risk: Risk;
   reason: string | null;
@@ -28,6 +30,8 @@ export interface LedgerEntry {
 }
 
 export type Ledger = Record<string, LedgerEntry>;
+export const LEDGER_VERSION = 2 as const;
+interface LedgerFileV2 { version: 2; entries: Ledger; }
 
 export const LEDGER_RELATIVE = join(".security", "dependency-approvals.json");
 
@@ -42,11 +46,13 @@ export function readLedger(cwd: string): Ledger {
   } catch {
     return {};
   }
+  let parsed: unknown;
   try {
-    return JSON.parse(raw) as Ledger;
+    parsed = JSON.parse(raw);
   } catch {
     throw new Error(`Invalid ${LEDGER_RELATIVE}: not valid JSON`);
   }
+  return normalizeLedger(parsed);
 }
 
 export function writeLedger(cwd: string, ledger: Ledger): void {
@@ -54,9 +60,49 @@ export function writeLedger(cwd: string, ledger: Ledger): void {
   mkdirSync(dirname(path), { recursive: true });
   const sorted: Ledger = {};
   for (const key of Object.keys(ledger).sort()) sorted[key] = ledger[key];
-  writeFileSync(path, JSON.stringify(sorted, null, 2) + "\n");
+  const file: LedgerFileV2 = { version: LEDGER_VERSION, entries: sorted };
+  writeFileSync(path, JSON.stringify(file, null, 2) + "\n");
 }
 
-export function upsertEntry(ledger: Ledger, name: string, entry: LedgerEntry): Ledger {
-  return { ...ledger, [name]: entry };
+export function upsertEntry(ledger: Ledger, name: string, version: string, entry: LedgerEntry): Ledger {
+  return { ...ledger, [ledgerKey(name, version)]: entry };
+}
+
+/** Rare "any approved version of name?" query — prefix scan over the flat record. */
+export function approvedVersions(ledger: Ledger, name: string): LedgerEntry[] {
+  return Object.values(ledger).filter((e) => e.name === name);
+}
+
+/** Accepts the v2 envelope OR a bare 0.1.x name-keyed object, migrating the latter in
+ *  memory. The migrated key uses the entry's own approvedVersion — the human-reviewed
+ *  fact — never node_modules/registry (which may have drifted). */
+export function normalizeLedger(parsed: unknown): Ledger {
+  if (typeof parsed !== "object" || parsed === null) throw new Error(`Invalid ${LEDGER_RELATIVE}: expected an object`);
+  if (Array.isArray(parsed)) throw new Error(`Invalid ${LEDGER_RELATIVE}: expected an object`);
+  const obj = parsed as Record<string, unknown>;
+
+  // v2: trust the envelope. (A real v1 package literally named "version" has an object
+  // value, not the number 2, so this never misfires.)
+  if (obj.version === 2 && typeof obj.entries === "object" && obj.entries !== null) return obj.entries as Ledger;
+
+  // v1 (published 0.1.x): bare name -> entry map; entries carry approvedVersion.
+  const out: Ledger = {};
+  for (const [name, value] of Object.entries(obj)) {
+    if (typeof value !== "object" || value === null) continue;
+    const e = value as Record<string, unknown>;
+    if (typeof e.approvedVersion !== "string") {
+      throw new Error(`Invalid ${LEDGER_RELATIVE}: entry "${name}" has no approvedVersion to key on (cannot migrate).`);
+    }
+    const version = e.approvedVersion;
+    out[ledgerKey(name, version)] = {
+      name, version,
+      addedAt: String(e.addedAt ?? ""),
+      risk: (e.risk as Risk) ?? "low",
+      reason: (e.reason as string | null) ?? null,
+      addedBy: (e.addedBy as string | null) ?? null,
+      checks: (e.checks as LedgerEntry["checks"]) ?? { ageHours: null, installScripts: false },
+      ...(e.cve ? { cve: e.cve as CveSnapshot } : {}),
+    };
+  }
+  return out;
 }
