@@ -7,6 +7,9 @@ export type PackageManager = "auto" | "pnpm" | "npm" | "yarn";
 /** What `check` does for a version concern. "off" disables, "warn" surfaces, "block" fails CI. */
 export type CheckMode = "warn" | "block" | "off";
 
+/** `requirePinned` is hygiene-only now (version-aware check absorbs its safety value). */
+export type PinMode = "warn" | "off";
+
 /** Severity ranking for the npm advisory levels, low → critical. */
 export const SEVERITY_RANK = ["low", "moderate", "high", "critical"] as const;
 export type Severity = (typeof SEVERITY_RANK)[number];
@@ -18,8 +21,11 @@ export interface Config {
   requireCooldownConfigured: boolean;
   allowScopedPackages: string[];
   packageManager: PackageManager;
-  versionDrift: CheckMode;
-  requirePinned: CheckMode;
+  /** @deprecated `check` is always version-aware now; this key is ignored and will be
+   *  removed in a future minor. Accepted (and validated) during the deprecation window. */
+  versionDrift?: CheckMode;
+  /** Hygiene-only pin warning. "warn" surfaces unpinned recorded deps; "off" disables. */
+  requirePinned: PinMode;
   /** Also gate peerDependencies in `vouch check`. Off by default: peers are usually
    *  host-provided contracts (a library declaring its required React, say), so gating
    *  them can create friction. optionalDependencies are always gated (they install). */
@@ -38,7 +44,6 @@ export const DEFAULT_CONFIG: Config = {
   requireCooldownConfigured: false,
   allowScopedPackages: [],
   packageManager: "auto",
-  versionDrift: "warn",
   requirePinned: "off",
   checkPeerDependencies: false,
   cveAtInstall: "warn",
@@ -92,13 +97,16 @@ export async function loadConfig(cwd: string): Promise<Config> {
 }
 
 function mergeAndValidate(parsed: Partial<Config>, source: string): Config {
-  // Strip $schema (legacy JSON's editor-only field) so it doesn't end up on the typed object.
   const { $schema: _ignored, ...rest } = parsed as Partial<Config> & { $schema?: unknown };
   const cfg = { ...DEFAULT_CONFIG, ...rest };
-  // Validate enum fields: a typo here (e.g. "blcok") would otherwise silently fall through
-  // to a weaker mode, quietly downgrading a gate the author meant to block.
-  checkEnum(source, "versionDrift", cfg.versionDrift, CHECK_MODES);
-  checkEnum(source, "requirePinned", cfg.requirePinned, CHECK_MODES);
+  // versionDrift is deprecated but still validated so a typo errors rather than silently
+  // downgrading; only checked when the author actually set it.
+  if (cfg.versionDrift !== undefined) checkEnum(source, "versionDrift", cfg.versionDrift, CHECK_MODES);
+  // requirePinned no longer supports "block" — version-aware check makes it non-load-bearing.
+  if ((cfg.requirePinned as string) === "block") {
+    throw new Error(`Invalid ${source}: "requirePinned" no longer supports "block" — version-aware check makes pinning non-load-bearing for safety. Use "warn" or "off".`);
+  }
+  checkEnum(source, "requirePinned", cfg.requirePinned, PIN_MODES);
   checkEnum(source, "cveAtInstall", cfg.cveAtInstall, CHECK_MODES);
   checkEnum(source, "cveAtInstallMinSeverity", cfg.cveAtInstallMinSeverity, SEVERITY_RANK);
   checkEnum(source, "packageManager", cfg.packageManager, PACKAGE_MANAGERS);
@@ -106,6 +114,7 @@ function mergeAndValidate(parsed: Partial<Config>, source: string): Config {
 }
 
 const CHECK_MODES = ["warn", "block", "off"] as const;
+const PIN_MODES = ["warn", "off"] as const;
 const PACKAGE_MANAGERS = ["auto", "pnpm", "npm", "yarn"] as const;
 
 function checkEnum(source: string, key: string, value: unknown, allowed: readonly string[]): void {
