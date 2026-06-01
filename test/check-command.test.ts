@@ -148,3 +148,50 @@ test("CVE drift message keeps fix/remove/acknowledge options", async () => {
   assert.match(v!.reason, /1\. Fix:/);
   assert.match(v!.reason, /3\. Accept:.*acknowledge lodash/);
 });
+
+import { runCheckWorkspaces } from "../src/check-command.js";
+import type { WorkspacePackage } from "../src/workspaces.js";
+
+const ws = (relPath: string, pkg: object): WorkspacePackage => ({ dir: `/r/${relPath === "." ? "" : relPath}`, relPath, name: null, pkg });
+
+// resolver keyed by (relPath, name) so different workspaces resolve different versions
+const wsResolver = (map: Record<string, Record<string, string>>): VersionResolver => ({
+  resolve: (dir, name) => {
+    const rel = dir === "/r/" || dir === "/r" ? "." : dir.slice(3);
+    const m = map[rel] ?? {};
+    return name in m ? m[name] : null;
+  },
+});
+
+test("runCheckWorkspaces: two workspaces on different zod versions → both must be recorded", async () => {
+  const workspaces = [ws("apps/elis", { dependencies: { zod: "^3" } }), ws("libs/api", { dependencies: { zod: "^4" } })];
+  const resolver = wsResolver({ "apps/elis": { zod: "3.25.76" }, "libs/api": { zod: "4.3.6" } });
+  const ledger: Ledger = { "zod@3.25.76": entry("zod", "3.25.76") }; // only one recorded
+  const r = await runCheckWorkspaces(workspaces, ledger, DEFAULT_CONFIG, fakeClient({}), resolver);
+  assert.equal(r.violations.length, 1);
+  assert.equal(r.violations[0].package, "zod@4.3.6");
+  assert.equal(r.violations[0].workspace, "libs/api");
+});
+
+test("runCheckWorkspaces: passes when every workspace's installed version is recorded", async () => {
+  const workspaces = [ws("apps/elis", { dependencies: { zod: "^3" } }), ws("libs/api", { dependencies: { zod: "^4" } })];
+  const resolver = wsResolver({ "apps/elis": { zod: "3.25.76" }, "libs/api": { zod: "4.3.6" } });
+  const ledger: Ledger = { "zod@3.25.76": entry("zod", "3.25.76"), "zod@4.3.6": entry("zod", "4.3.6") };
+  const r = await runCheckWorkspaces(workspaces, ledger, DEFAULT_CONFIG, fakeClient({}), resolver);
+  assert.deepEqual(r.violations, []);
+});
+
+test("runCheckWorkspaces: bulk CVE query unions versions across workspaces", async () => {
+  const workspaces = [ws("apps/elis", { dependencies: { zod: "^3" } }), ws("libs/api", { dependencies: { zod: "^4" } })];
+  const resolver = wsResolver({ "apps/elis": { zod: "3.25.76" }, "libs/api": { zod: "4.3.6" } });
+  const ledger: Ledger = { "zod@3.25.76": entry("zod", "3.25.76"), "zod@4.3.6": entry("zod", "4.3.6") };
+  let seen: Record<string, string[]> | undefined;
+  await runCheckWorkspaces(workspaces, ledger, DEFAULT_CONFIG, { async fetchBulk(pv) { seen = pv; return {}; } }, resolver);
+  assert.deepEqual(seen?.zod.sort(), ["3.25.76", "4.3.6"]);
+});
+
+test("runCheckWorkspaces: protocol ranges skipped, internal libs not flagged", async () => {
+  const workspaces = [ws("apps/elis", { dependencies: { "@rossum/api": "workspace:*" } })];
+  const r = await runCheckWorkspaces(workspaces, {}, DEFAULT_CONFIG, fakeClient({}), wsResolver({}));
+  assert.deepEqual(r.violations, []);
+});
