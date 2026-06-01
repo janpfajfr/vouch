@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.0] — Unreleased
+
+### Breaking
+
+- **Ledger format is now keyed by `name@version`** and wrapped in a `{ "version": 2, "entries": … }` envelope. 0.1.x name-keyed ledgers auto-migrate on read; the rewritten file lands in the next mutation's diff (commit it). No `vouch migrate` command. A 0.1.x entry lacking `approvedVersion` fails closed with a clear message.
+- **`vouch check` is now version-aware and block-always**: it resolves each dependency's installed version (from `node_modules`) and asserts that exact `name@version` was reviewed. Run `check` after a complete install. A repo whose installed versions drifted from recorded versions will newly fail — run `vouch <pkg>@<installed>` to record them.
+- **Config:** `requirePinned` no longer accepts `"block"` (use `"warn"` | `"off"`); `versionDrift` is deprecated and ignored.
+
 ## [0.1.1] - 2026-05-30
 
 ### Fixed
