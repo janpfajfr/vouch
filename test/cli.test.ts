@@ -56,7 +56,7 @@ test("allowlisted scoped package skips the gate even with install scripts", asyn
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
-    const e = readLedger(dir)["@acme/widget"];
+    const e = readLedger(dir)["@acme/widget@1.0.0"];
     assert.equal(e.risk, "low");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -93,7 +93,7 @@ test("runSafeAdd surfaces a deprecation note and records medium risk", async () 
     });
     assert.equal(code, 0);
     assert.ok(logs.some((s) => /deprecated/i.test(s)), "notes the deprecation");
-    assert.equal(readLedger(dir).request.risk, "medium");
+    assert.equal(readLedger(dir)["request@1.0.0"].risk, "medium");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -133,7 +133,7 @@ test("cveAtInstall=block + --force-with-reason: install proceeds and reason is r
       now: () => new Date("2026-05-28"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
-    const e = readLedger(dir).minimist;
+    const e = readLedger(dir)["minimist@1.0.0"];
     assert.equal(e.reason, "needed; not on hot path");
     assert.equal(e.risk, "high", "block-level CVE finding should bump risk to high");
   } finally {
@@ -154,7 +154,7 @@ test("cveAtInstall=block: moderate advisory stays a warn (below default 'high' t
       now: () => new Date("2026-05-28"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
-    assert.equal(readLedger(dir).minimist.approvedVersion, "1.0.0");
+    assert.equal(readLedger(dir)["minimist@1.0.0"].version, "1.0.0");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -170,7 +170,7 @@ test("runSafeAdd records addedBy from the injected git identity", async () => {
       identity: () => "Jan Pfajfr <jan@example.com>",
       now: () => new Date("2026-05-27T10:00:00Z"), cwd: dir, log: () => {}, err: () => {},
     });
-    assert.equal(readLedger(dir).ms.addedBy, "Jan Pfajfr <jan@example.com>");
+    assert.equal(readLedger(dir)["ms@1.0.0"].addedBy, "Jan Pfajfr <jan@example.com>");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -190,8 +190,8 @@ test("safe (old, no scripts) package installs and writes ledger", async () => {
     assert.equal(code, 0);
     assert.deepEqual(calls[0], ["install", "lodash"]);
     const ledger = readLedger(dir);
-    assert.equal(ledger.lodash.risk, "low");
-    assert.equal(ledger.lodash.approvedVersion, "1.0.0");
+    assert.equal(ledger["lodash@1.0.0"].risk, "low");
+    assert.equal(ledger["lodash@1.0.0"].version, "1.0.0");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -227,7 +227,7 @@ test("--force-with-reason allows a blocked package and records high risk + reaso
       now: () => new Date("2026-05-23"), cwd: dir, log: () => {}, err: () => {},
     });
     assert.equal(code, 0);
-    const e = readLedger(dir).evil;
+    const e = readLedger(dir)["evil@1.0.0"];
     assert.equal(e.risk, "high");
     assert.equal(e.reason, "needed for bugfix");
     assert.equal(e.addedBy, null);
@@ -268,7 +268,7 @@ test("vouch warns about a CVE on the installed version and points to acknowledge
     assert.equal(code, 0);
     assert.ok(logs.some((s) => /GHSA-x/.test(s)), "names the advisory");
     assert.ok(logs.some((s) => /acknowledge/.test(s)), "points to acknowledge");
-    assert.equal(readLedger(dir).lodash.cve, undefined); // never silently acknowledged
+    assert.equal(readLedger(dir)["lodash@1.0.0"].cve, undefined); // never silently acknowledged
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -288,7 +288,7 @@ test("vouch fails open when the advisory service is unavailable", async () => {
     });
     assert.equal(code, 0);
     assert.ok(!logs.some((s) => /advisory|advisories/i.test(s)), "no CVE noise when unverifiable");
-    assert.equal(readLedger(dir).lodash.risk, "low");
+    assert.equal(readLedger(dir)["lodash@1.0.0"].risk, "low");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -309,14 +309,14 @@ test("runAcknowledge requires a reason and records git identity + advisories", a
   try {
     const log: string[] = [];
     const code = await runAcknowledge({
-      pkg: "lodash", reason: "dev-only, path unreachable",
+      pkg: "lodash@4.17.21", reason: "dev-only, path unreachable",
       identity: () => "Jan Pfajfr <jan@example.com>",
       client: ackClient({ lodash: [{ id: "GHSA-x", severity: "high" }] }),
       cwd, now: () => new Date("2026-05-27T10:00:00Z"), log: (s) => log.push(s), err: () => {},
     });
     assert.equal(code, 0);
     assert.ok(log.some((s) => /acknowledged/i.test(s)));
-    const cve = readLedger(cwd).lodash.cve;
+    const cve = readLedger(cwd)["lodash@4.17.21"].cve;
     assert.equal(cve?.reason, "dev-only, path unreachable");
     assert.equal(cve?.acknowledgedBy, "Jan Pfajfr <jan@example.com>");
     assert.equal(cve?.acknowledged.length, 1);
@@ -330,7 +330,7 @@ test("runAcknowledge errors and leaves ledger unchanged when offline", async () 
   const cwd = seedLedger({});
   try {
     const before = readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8");
-    const code = await runAcknowledge({ pkg: "lodash", reason: "x", identity: () => null, client: ackClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
+    const code = await runAcknowledge({ pkg: "lodash@4.17.21", reason: "x", identity: () => null, client: ackClient(null), cwd, now: () => new Date(), log: () => {}, err: () => {} });
     assert.equal(code, 1);
     assert.equal(readFileSync(join(cwd, ".security", "dependency-approvals.json"), "utf8"), before);
   } finally {
@@ -342,7 +342,7 @@ test("runAcknowledge errors on unknown package", async () => {
   const cwd = seedLedger({});
   try {
     const errs: string[] = [];
-    const code = await runAcknowledge({ pkg: "ghost", reason: "x", identity: () => null, client: ackClient({}), cwd, now: () => new Date(), log: () => {}, err: (s) => errs.push(s) });
+    const code = await runAcknowledge({ pkg: "ghost@1.0.0", reason: "x", identity: () => null, client: ackClient({}), cwd, now: () => new Date(), log: () => {}, err: (s) => errs.push(s) });
     assert.equal(code, 1);
     assert.ok(errs.some((s) => /ghost/.test(s)));
   } finally {
@@ -385,7 +385,7 @@ test("runInit: writes a JSDoc-typed plain export when vouch isn't installed loca
     assert.match(content, /@type \{import\("@vouchjs\/vouch"\)\.Config\}/);
     assert.match(content, /export default \{/);
     // Every Config key visible, with its default literal value
-    for (const key of ["packageManager", "allowScopedPackages", "minimumVersionAgeHours", "warnVersionAgeHours", "blockInstallScripts", "requireCooldownConfigured", "versionDrift", "requirePinned", "cveAtInstall", "cveAtInstallMinSeverity"]) {
+    for (const key of ["packageManager", "allowScopedPackages", "minimumVersionAgeHours", "warnVersionAgeHours", "blockInstallScripts", "requireCooldownConfigured", "requirePinned", "cveAtInstall", "cveAtInstallMinSeverity"]) {
       assert.match(content, new RegExp(`\\b${key}:`), `expected ${key} in the generated config`);
     }
     assert.match(content, /packageManager: "auto"/);
@@ -447,4 +447,48 @@ test("runInit: refuses to overwrite an existing vouch.config or legacy .safe-dep
 
 test("parseAddArgs: empty or flag-like reason is rejected", () => {
   assert.match(parseAddArgs(["a", "--force-with-reason", "-D"]).error ?? "", /reason/i);
+});
+
+// Model C — keyed ledger (name@version) tests
+
+const regV2 = (version: string): RegistryClient => ({
+  async fetchMetadata(name) { return { name, version, publishedAt: new Date("2020-01-01T00:00:00Z"), scripts: {}, deprecated: false }; },
+});
+const noInstallV2 = { async install() { return 0; } };
+
+test("runSafeAdd writes a name@version-keyed v2 entry with name+version fields", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({}));
+    const code = await runSafeAdd({
+      spec: "lodash", dev: false, force: null, registry: regV2("4.17.21"), installer: noInstallV2,
+      now: () => new Date("2026-05-31T00:00:00Z"), identity: () => null, cwd: dir,
+      log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    const file = JSON.parse(readFileSync(join(dir, ".security", "dependency-approvals.json"), "utf8"));
+    assert.equal(file.version, 2);
+    assert.ok(file.entries["lodash@4.17.21"]);
+    assert.equal(file.entries["lodash@4.17.21"].name, "lodash");
+    assert.equal(file.entries["lodash@4.17.21"].version, "4.17.21");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const ackClientV2 = (ids: string[]): AdvisoryClient => ({ async fetchBulk() { return { lodash: ids.map((id) => ({ id, severity: "low" as const })) }; } });
+
+test("runAcknowledge targets the explicit name@version spec", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"), JSON.stringify({
+      version: 2, entries: { "lodash@4.17.20": { name: "lodash", version: "4.17.20", addedAt: "t", risk: "low", reason: null, addedBy: null, checks: { ageHours: 1, installScripts: false } } },
+    }));
+    const code = await runAcknowledge({
+      pkg: "lodash@4.17.20", reason: "accepted", identity: () => "a", client: ackClientV2(["GHSA-x"]),
+      now: () => new Date("2026-05-31T00:00:00Z"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    const file = JSON.parse(readFileSync(join(dir, ".security", "dependency-approvals.json"), "utf8"));
+    assert.deepEqual(file.entries["lodash@4.17.20"].cve.acknowledged, [{ id: "GHSA-x", severity: "low" }]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
