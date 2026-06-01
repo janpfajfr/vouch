@@ -68,6 +68,7 @@ test("helpText lists the usage and the foundation command set", () => {
   assert.match(h, /Usage:/);
   assert.match(h, /vouch check/);
   assert.match(h, /vouch acknowledge/);
+  assert.match(h, /vouch adopt/);
   assert.doesNotMatch(h, /vouch approve/);
   assert.doesNotMatch(h, /reapprove/);
   assert.match(h, /--force-with-reason/);
@@ -374,10 +375,10 @@ test("parseAddArgs: no package yields the no-package marker", () => {
   assert.equal(parseAddArgs(["--force-with-reason", "x"]).error, "no-package");
 });
 
-test("runInit: writes a JSDoc-typed plain export when vouch isn't installed locally", () => {
+test("runInit: writes a JSDoc-typed plain export when vouch isn't installed locally", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-init-novouch-"));
   try {
-    const code = runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const code = await runInit({ cwd: dir, log: () => {}, err: () => {} });
     assert.equal(code, 0);
     const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
     // No runtime import → loads even without `npm install -D @vouchjs/vouch`.
@@ -392,28 +393,28 @@ test("runInit: writes a JSDoc-typed plain export when vouch isn't installed loca
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("runInit: uses the defineConfig import when vouch IS installed locally", () => {
+test("runInit: uses the defineConfig import when vouch IS installed locally", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-init-hasvouch-"));
   try {
     // Simulate `npm install -D @vouchjs/vouch` — a node_modules/@vouchjs/vouch entry exists.
     mkdirSync(join(dir, "node_modules", "@vouchjs", "vouch"), { recursive: true });
-    runInit({ cwd: dir, log: () => {}, err: () => {} });
+    await runInit({ cwd: dir, log: () => {}, err: () => {} });
     const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
     assert.match(content, /import \{ defineConfig \} from "@vouchjs\/vouch"/);
     assert.match(content, /export default defineConfig\({/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("runInit: picks .js when package.json declares type=module, .mjs otherwise", () => {
+test("runInit: picks .js when package.json declares type=module, .mjs otherwise", async () => {
   const dirMjs = mkdtempSync(join(tmpdir(), "ysna-init-mjs-"));
   const dirJs = mkdtempSync(join(tmpdir(), "ysna-init-js-"));
   try {
     writeFileSync(join(dirMjs, "package.json"), JSON.stringify({ name: "x" }));
-    runInit({ cwd: dirMjs, log: () => {}, err: () => {} });
+    await runInit({ cwd: dirMjs, log: () => {}, err: () => {} });
     assert.ok(readFileSync(join(dirMjs, "vouch.config.mjs"), "utf8"));
 
     writeFileSync(join(dirJs, "package.json"), JSON.stringify({ name: "x", type: "module" }));
-    runInit({ cwd: dirJs, log: () => {}, err: () => {} });
+    await runInit({ cwd: dirJs, log: () => {}, err: () => {} });
     assert.ok(readFileSync(join(dirJs, "vouch.config.js"), "utf8"));
   } finally {
     rmSync(dirMjs, { recursive: true, force: true });
@@ -421,22 +422,22 @@ test("runInit: picks .js when package.json declares type=module, .mjs otherwise"
   }
 });
 
-test("runInit: seeds detected packageManager into the generated config", () => {
+test("runInit: seeds detected packageManager into the generated config", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-init-seed-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ packageManager: "pnpm@9.5.0" }));
-    runInit({ cwd: dir, log: () => {}, err: () => {} });
+    await runInit({ cwd: dir, log: () => {}, err: () => {} });
     const content = readFileSync(join(dir, "vouch.config.mjs"), "utf8");
     assert.match(content, /packageManager: "pnpm"/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("runInit: refuses to overwrite an existing vouch.config or legacy .safe-dep.json", () => {
+test("runInit: refuses to overwrite an existing vouch.config or legacy .safe-dep.json", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-init-skip-"));
   try {
     writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block" }));
     const logs: string[] = [];
-    const code = runInit({ cwd: dir, log: (s) => logs.push(s), err: () => {} });
+    const code = await runInit({ cwd: dir, log: (s) => logs.push(s), err: () => {} });
     assert.equal(code, 0);
     assert.ok(logs.some((s) => /already/i.test(s)));
     // didn't write a new config file
@@ -491,4 +492,24 @@ test("runAcknowledge targets the explicit name@version spec", async () => {
     const file = JSON.parse(readFileSync(join(dir, ".security", "dependency-approvals.json"), "utf8"));
     assert.deepEqual(file.entries["lodash@4.17.20"].cve.acknowledged, [{ id: "GHSA-x", severity: "low" }]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const reg = regV2;
+const noInstall = noInstallV2;
+
+test("runSafeAdd writes to the injected ledgerDir (root), not cwd", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    const sub = join(root, "apps", "elis");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "package.json"), JSON.stringify({}));
+    const code = await runSafeAdd({
+      spec: "lodash", dev: false, force: null, registry: reg("4.17.21"), installer: noInstall,
+      now: () => new Date("2026-05-31T00:00:00Z"), identity: () => null, cwd: sub, ledgerDir: root,
+      log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    const file = JSON.parse(readFileSync(join(root, ".security", "dependency-approvals.json"), "utf8"));
+    assert.ok(file.entries["lodash@4.17.21"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
