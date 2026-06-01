@@ -221,7 +221,8 @@ export interface SafeAddOptions {
 }
 
 export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
-  const cfg = await loadConfig(opts.cwd);
+  const ledgerDir = opts.ledgerDir ?? opts.cwd;
+  const cfg = await loadConfig(ledgerDir);
   const { name, version } = parseSpec(opts.spec);
 
   let meta;
@@ -276,8 +277,8 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     return 1;
   }
 
-  const pm = detectPM(opts.cwd, cfg.packageManager);
-  if (cfg.requireCooldownConfigured && !cooldownConfigured(opts.cwd, pm)) {
+  const pm = detectPM(ledgerDir, cfg.packageManager);
+  if (cfg.requireCooldownConfigured && !cooldownConfigured(ledgerDir, pm)) {
     notes.push(`${pm} has no release-age cooldown configured.`);
   }
 
@@ -297,7 +298,6 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     addedBy: (opts.identity ?? (() => gitIdentity()))(),
     checks: { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts: (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false; })() },
   };
-  const ledgerDir = opts.ledgerDir ?? opts.cwd;
   writeLedger(ledgerDir, upsertEntry(readLedger(ledgerDir), name, meta.version, entry));
   opts.log(statusHeader("success", "Recorded dependency decision", o));
   opts.log("");

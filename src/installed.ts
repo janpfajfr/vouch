@@ -91,16 +91,24 @@ export function createVersionResolver(repoRoot: string, deps: ResolverDeps = def
     }
     return lockCache;
   };
+  const memo = new Map<string, string | null>();
   return {
     resolve(workspaceDir, name) {
-      const walked = walkNodeModules(repoRoot, workspaceDir, name, deps);
-      if (walked !== null) return walked;                   // prefer the actually-installed version
-      const lock = readLock();
-      if (lock !== null) {
-        const v = pnpmLockVersion(lock, importerKey(repoRoot, workspaceDir), name);
-        if (v) return v;
-      }
-      return null;
+      const cacheKey = `${workspaceDir} ${name}`;
+      const cached = memo.get(cacheKey);
+      if (cached !== undefined) return cached;
+      const result = ((): string | null => {
+        const walked = walkNodeModules(repoRoot, workspaceDir, name, deps);
+        if (walked !== null) return walked;                   // prefer the actually-installed version
+        const lock = readLock();
+        if (lock !== null) {
+          const v = pnpmLockVersion(lock, importerKey(repoRoot, workspaceDir), name);
+          if (v) return v;
+        }
+        return null;
+      })();
+      memo.set(cacheKey, result);
+      return result;
     },
   };
 }

@@ -105,21 +105,24 @@ function readPkg(dir: string, deps: DiscoveryDeps): (PackageJsonLike & { name?: 
   try { return JSON.parse(deps.readFile(join(dir, "package.json"))); } catch { return null; }
 }
 
-/** Walk up from cwd to the workspace root: nearest ancestor with pnpm-workspace.yaml or a
- *  `workspaces` package.json; else the nearest .git; else cwd (single-package). */
+/** Walk up from cwd to the workspace/project root: the nearest ancestor with a workspace
+ *  marker (pnpm-workspace.yaml, or package.json with `workspaces`) wins; otherwise the
+ *  nearest ancestor that has a package.json; otherwise cwd. (No bare .git fallback — a git
+ *  root without a package.json isn't a project root, and a non-workspace git root must not
+ *  silently become the check target over the package you're actually in.) */
 export function findRepoRoot(cwd: string, deps: DiscoveryDeps = defaultDeps): string {
   let dir = cwd;
-  let firstGit: string | null = null;
+  let firstPkgDir: string | null = null;
   for (;;) {
     if (deps.exists(join(dir, "pnpm-workspace.yaml"))) return dir;
     const pkg = deps.exists(join(dir, "package.json")) ? readPkg(dir, deps) : null;
     if (pkg && (pkg as { workspaces?: unknown }).workspaces) return dir;
-    if (firstGit === null && deps.exists(join(dir, ".git"))) firstGit = dir;
+    if (firstPkgDir === null && pkg) firstPkgDir = dir;     // nearest enclosing package
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return firstGit ?? cwd;
+  return firstPkgDir ?? cwd;
 }
 
 function toPosixRel(root: string, dir: string): string {

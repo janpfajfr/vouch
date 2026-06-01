@@ -90,11 +90,16 @@ test("findRepoRoot prefers a workspaces package.json over a nearer .git", () => 
   assert.equal(findRepoRoot("/r/apps/elis", deps), "/r");
 });
 
-test("findRepoRoot falls back to the nearest .git, else cwd", () => {
-  const withGit = fs({}, { "/r/.git": [], "/r": [], "/r/sub": [] });
-  assert.equal(findRepoRoot("/r/sub", withGit), "/r");
-  const none = fs({}, { "/r/sub": [] });
-  assert.equal(findRepoRoot("/r/sub", none), "/r/sub");
+test("findRepoRoot: no workspace marker → nearest enclosing package.json, else cwd", () => {
+  // no markers and no package.json anywhere → cwd
+  assert.equal(findRepoRoot("/r/sub", fs({}, { "/r/.git": [], "/r": [], "/r/sub": [] })), "/r/sub");
+  // single-package repo run from a subdir: the ancestor package.json wins
+  assert.equal(findRepoRoot("/r/sub", fs({ "/r/package.json": "{}" }, { "/r": [], "/r/sub": [] })), "/r");
+});
+
+test("findRepoRoot: a subdir package wins over a non-workspace git root (no silent wrong-target)", () => {
+  const deps = fs({ "/r/package.json": "{}", "/r/apps/x/package.json": "{}" }, { "/r/.git": [], "/r": [], "/r/apps": [], "/r/apps/x": [] });
+  assert.equal(findRepoRoot("/r/apps/x", deps), "/r/apps/x"); // the package you're in, not the git root
 });
 
 // ─── Task 3: discoverWorkspaces ──────────────────────────────────────────────
