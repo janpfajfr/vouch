@@ -174,3 +174,62 @@ test("--version prints a semver and exits 0", () => {
   const out = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
   assert.match(out, /\d+\.\d+\.\d+/);
 });
+
+/** Build a 2-package pnpm workspace under a temp dir, with zod installed at two versions. */
+function pnpmWorkspace(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-ws-"));
+  writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n  - libs/*\n");
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "root", private: true }));
+  mkdirSync(join(dir, "apps", "elis"), { recursive: true });
+  writeFileSync(join(dir, "apps", "elis", "package.json"), JSON.stringify({ name: "@app/elis", dependencies: { zod: "^3" } }));
+  mkdirSync(join(dir, "libs", "api"), { recursive: true });
+  writeFileSync(join(dir, "libs", "api", "package.json"), JSON.stringify({ name: "@rossum/api", dependencies: { zod: "^4" } }));
+  mkdirSync(join(dir, "apps", "elis", "node_modules", "zod"), { recursive: true });
+  writeFileSync(join(dir, "apps", "elis", "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.25.76" }));
+  mkdirSync(join(dir, "libs", "api", "node_modules", "zod"), { recursive: true });
+  writeFileSync(join(dir, "libs", "api", "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "4.3.6" }));
+  return dir;
+}
+
+test("check on a pnpm workspace flags the unrecorded zod@4.3.6 in libs/api, groups by workspace", () => {
+  const dir = pnpmWorkspace();
+  try {
+    mkdirSync(join(dir, ".security"), { recursive: true });
+    writeFileSync(join(dir, ".security", "dependency-approvals.json"), ledgerV2("zod", "3.25.76")); // only apps/elis's version recorded
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, "check"], { cwd: dir, stdio: "pipe", env: { ...process.env, VOUCH_ADVISORY_URL: "http://127.0.0.1:1" } }),
+      (err: NodeJS.ErrnoException & { status?: number; stderr?: Buffer }) => {
+        assert.equal(err.status, 1);
+        const stderr = String(err.stderr);
+        assert.match(stderr, /libs\/api/);
+        assert.match(stderr, /vouch zod@4\.3\.6/);
+        assert.doesNotMatch(stderr, /zod@3\.25\.76:/); // apps/elis is recorded → not a violation
+        return true;
+      },
+    );
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("adopt on a pnpm workspace baselines and exits 0 (network-independent assertion)", () => {
+  const dir = pnpmWorkspace();
+  try {
+    const out = execFileSync(process.execPath, [cli, "adopt"], { cwd: dir, encoding: "utf8", env: { ...process.env, VOUCH_ADVISORY_URL: "http://127.0.0.1:1" } });
+    assert.match(out, /Adopted/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("--help lists adopt", () => {
+  const out = execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
+  assert.match(out, /vouch adopt/);
+});
+
+test("adopt rejects a positional package argument", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }));
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, "adopt", "left-pad"], { cwd: dir, stdio: "pipe" }),
+      (err: NodeJS.ErrnoException & { status?: number }) => { assert.equal(err.status, 1); return true; },
+    );
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
