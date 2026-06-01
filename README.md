@@ -23,6 +23,7 @@ and conscience for your `package.json`.
 - [vouch records; the PR review approves](#vouch-records-the-pr-review-approves)
 - [When `check` blocks on a CVE](#when-check-blocks-on-a-cve)
 - [Commands](#commands)
+- [Using vouch in a monorepo](#using-vouch-in-a-monorepo)
 - [Configuration](#configuration-safe-depjson)
 - [For coding agents](#for-coding-agents)
 - [What it is *not*](#what-it-is-not)
@@ -165,10 +166,10 @@ usual, and `check` passes because the committed ledger already covers every depe
 - **pinning** — an opt-in `requirePinned` (`"warn"`, default `"off"`) flags deps that use a
   range instead of an exact version, suggesting the recorded version to pin to.
 
-> **Scope:** `vouch check` governs the `package.json` in the directory it runs from, covering
+> **Scope:** `vouch check` governs all workspace packages discovered from the repo root, covering
 > `dependencies`, `devDependencies`, and `optionalDependencies` (plus `peerDependencies` when
-> `checkPeerDependencies` is on). **Monorepos:** it does not yet walk workspace manifests — run
-> `check` per workspace for now; first-class workspace support is on the roadmap.
+> `checkPeerDependencies` is on). All workspaces share one root ledger. See
+> [Using vouch in a monorepo](#using-vouch-in-a-monorepo).
 
 ---
 
@@ -215,11 +216,24 @@ build), and only the specific dependency that drifted — never your whole proje
 | `vouch <pkg> [-D]` | Review, install, and record a dependency (`-D` for devDependencies). |
 | `vouch <pkg> --force-with-reason "<why>"` | Override a block, recording the reason in the ledger. |
 | `vouch check` | CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift. |
+| `vouch adopt` | Baseline the whole repo: records every installed, unrecorded dependency across all workspaces (deduped by `name@version`). Never installs. Idempotent. |
 | `vouch acknowledge <pkg> --reason "<why>"` | Knowingly accept a dependency's current advisories (CVE drift). |
 | `vouch init` | Bootstrap `vouch.config.{mjs,js}` with all defaults shown + detected `packageManager`. Refuses to overwrite. |
 | `vouch --help` · `vouch --version` | Help (with the wordmark) and version. |
 
 Environment: `VOUCH_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
+
+---
+
+## Using vouch in a monorepo
+
+vouch is workspace-aware for **pnpm** (`pnpm-workspace.yaml` `packages:`) and **npm/yarn** (`package.json` `workspaces`). It discovers every workspace package, takes the union of their declared dependencies, and operates against **one root ledger** at `<repo-root>/.security/dependency-approvals.json`.
+
+- **Baseline the repo:** run `vouch adopt` at the repo root — it records every installed, unrecorded dependency across all workspaces, deduped by `name@version` (two workspaces on different versions of the same package get two entries).
+- **Enforce in CI:** run `vouch check` after installing. It resolves each dependency's **installed** version (from `node_modules`, falling back to `pnpm-lock.yaml` for workspaces with no local `node_modules`) per workspace and fails if that exact `name@version` was never reviewed. Run it after a complete install (`pnpm install --frozen-lockfile`).
+- **Add a dependency:** run `vouch <pkg>` inside the workspace that needs it. The package manager installs it into that workspace; vouch records it to the **root** ledger at the version installed for that workspace.
+
+Internal dependencies (`workspace:`, `link:`, `file:`, `catalog:`) are skipped — they are intra-repo edges, not external packages. Single-package repos are unaffected beyond the `name@version` keying. Violations are grouped by workspace, and the fix-it list is capped per group with a pointer to `vouch adopt`.
 
 ---
 
