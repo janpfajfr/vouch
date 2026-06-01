@@ -5,6 +5,7 @@ import { detectDrift, type AdvisoryClient } from "./advisories.js";
 import { isExactPin } from "./semver.js";
 import { ledgerKey } from "./spec.js";
 import { isProtocolRange, type VersionResolver } from "./installed.js";
+import type { WorkspacePackage } from "./workspaces.js";
 
 export interface PackageJsonLike {
   dependencies?: Record<string, string>;
@@ -150,4 +151,65 @@ export function cveDriftMessage(pkg: string, id: string, severity: string): stri
     `  2. Remove:  remove ${pkg} from package.json`,
     `  3. Accept:  vouch acknowledge ${pkg} --reason "<why this is acceptable>"`,
   ].join("\n");
+}
+
+/** Workspace-aware check: fan `checkPackage` over every workspace, run one combined CVE
+ *  pass over the union of installed versions, and attribute each finding to its workspace.
+ *  Reuses the single-package primitives unchanged. */
+export async function runCheckWorkspaces(
+  workspaces: WorkspacePackage[],
+  ledger: Ledger,
+  cfg: Config,
+  client: AdvisoryClient,
+  resolver: VersionResolver,
+): Promise<{ violations: CheckViolation[]; warnings: string[] }> {
+  const violations: CheckViolation[] = [];
+  const warnings: string[] = [];
+
+  if (cfg.versionDrift !== undefined && cfg.versionDrift !== "off") {
+    warnings.push("versionDrift is no longer used — check is always version-aware now (the config key is ignored and will be removed in a future release).");
+  }
+
+  const unionVersions: Record<string, Set<string>> = {};
+  const perWs: Array<{ relPath: string; installed: Record<string, string> }> = [];
+
+  for (const w of workspaces) {
+    violations.push(...checkPackage(w.pkg, w.dir, w.relPath, ledger, resolver, cfg));
+    const installed: Record<string, string> = {};
+    for (const [name, range] of Object.entries(directDeps(w.pkg, cfg))) {
+      if (isProtocolRange(range)) continue;
+      const v = resolver.resolve(w.dir, name);
+      if (v !== null) { installed[name] = v; (unionVersions[name] ??= new Set()).add(v); }
+    }
+    perWs.push({ relPath: w.relPath, installed });
+    if (cfg.requirePinned !== "off") {
+      const prefix = w.relPath === "." ? "" : `(${w.relPath}) `;
+      for (const u of detectUnpinned(w.pkg, w.dir, w.relPath, ledger, resolver, cfg)) {
+        warnings.push(`${prefix}${u.package} — ${unpinnedMessage(u)}`);
+      }
+    }
+  }
+
+  const pkgVersions: Record<string, string[]> = {};
+  for (const [name, set] of Object.entries(unionVersions)) pkgVersions[name] = [...set];
+
+  const live = await client.fetchBulk(pkgVersions);
+  if (live === null) {
+    if (Object.keys(pkgVersions).length > 0) warnings.push("Could not verify advisories (offline or registry error); CVE drift was not checked.");
+    return { violations, warnings };
+  }
+
+  const seenDrift = new Set<string>();
+  for (const { relPath, installed } of perWs) {
+    for (const d of detectDrift(ledger, live, installed)) {
+      const version = installed[d.package];
+      for (const a of d.newAdvisories) {
+        const dedupKey = `${d.package}@${version}::${a.id}`;
+        if (seenDrift.has(dedupKey)) continue;
+        seenDrift.add(dedupKey);
+        violations.push({ workspace: relPath, package: `${d.package}@${version}`, reason: cveDriftMessage(d.package, a.id, a.severity) });
+      }
+    }
+  }
+  return { violations, warnings };
 }

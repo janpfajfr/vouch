@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [0.2.0] — Unreleased
 
+### Added
+
+- **Workspace-aware `check`, `adopt`, and `init`** for pnpm (`pnpm-workspace.yaml`) and npm/yarn (`package.json` `workspaces`) monorepos. They discover every workspace, take the union of declared dependencies, and operate against one root ledger at the repo root (located via `findRepoRoot`). `check` output is grouped by workspace and capped per group.
+- **`vouch adopt`** — baseline a whole project in one command: records every installed, unrecorded dependency across all workspaces (deduped by `name@version`), with real risk assessment and a blanket reason. Never installs, never acknowledges CVEs, idempotent.
+- **`init` nudge** — after writing the config, reports how many dependencies are unrecorded and points to `vouch adopt`.
+- The installed-version resolver falls back to `pnpm-lock.yaml`'s `importers` block when a pnpm workspace has no local `node_modules`, so every declared dependency resolves.
+
 ### Breaking
 
 - **Ledger format is now keyed by `name@version`** and wrapped in a `{ "version": 2, "entries": … }` envelope. 0.1.x name-keyed ledgers auto-migrate on read; the rewritten file lands in the next mutation's diff (commit it). No `vouch migrate` command. A 0.1.x entry lacking `approvedVersion` fails closed with a clear message. (A repo that only runs `check` keeps the 0.1.x file on disk until its next mutation — `check` migrates it in memory, so it still passes.)
