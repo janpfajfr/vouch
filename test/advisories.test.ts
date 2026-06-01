@@ -35,32 +35,60 @@ test("returns empty object for non-object input", () => {
   assert.deepEqual(normalizeAdvisories("nope"), {});
 });
 
-const entry = (version: string, ack: { id: string; severity: "low"|"moderate"|"high"|"critical" }[]) => ({
-  approvedVersion: version, addedAt: "x", risk: "low" as const, reason: null, addedBy: null,
-  checks: { ageHours: 1, installScripts: false as const },
-  cve: { acknowledged: ack, acknowledgedBy: "alice", acknowledgedAt: "x", reason: "accepted" },
+const entry = (name: string, version: string, ackIds: string[]): Ledger[string] => ({
+  name, version, addedAt: "x", risk: "low" as const, reason: null, addedBy: null,
+  checks: { ageHours: 1, installScripts: false },
+  cve: { acknowledged: ackIds.map((id) => ({ id, severity: "low" as const })), acknowledgedBy: "alice", acknowledgedAt: "x", reason: "accepted" },
 });
 
 test("detectDrift reports advisories not in the acknowledged set", () => {
-  const ledger: Ledger = { lodash: entry("4.17.20", [{ id: "GHSA-old", severity: "low" }]) };
-  const drift = detectDrift(ledger, { lodash: [{ id: "GHSA-old", severity: "low" }, { id: "GHSA-new", severity: "high" }] });
+  const ledger: Ledger = { "lodash@4.17.20": entry("lodash", "4.17.20", ["GHSA-old"]) };
+  const drift = detectDrift(ledger, { lodash: [{ id: "GHSA-old", severity: "low" }, { id: "GHSA-new", severity: "high" }] }, { lodash: "4.17.20" });
   assert.equal(drift.length, 1);
   assert.equal(drift[0].package, "lodash");
   assert.deepEqual(drift[0].newAdvisories, [{ id: "GHSA-new", severity: "high" }]);
 });
 
 test("detectDrift reports nothing when all advisories are acknowledged", () => {
-  const ledger: Ledger = { lodash: entry("4.17.20", [{ id: "GHSA-old", severity: "low" }]) };
-  assert.deepEqual(detectDrift(ledger, { lodash: [{ id: "GHSA-old", severity: "low" }] }), []);
+  const ledger: Ledger = { "lodash@4.17.20": entry("lodash", "4.17.20", ["GHSA-old"]) };
+  assert.deepEqual(detectDrift(ledger, { lodash: [{ id: "GHSA-old", severity: "low" }] }, { lodash: "4.17.20" }), []);
 });
 
 test("detectDrift treats a missing cve field as an empty acknowledged set", () => {
-  const ledger: Ledger = { foo: { approvedVersion: "1", addedAt: "x", risk: "low", reason: null, addedBy: null, checks: { ageHours: 1, installScripts: false } } };
-  const drift = detectDrift(ledger, { foo: [{ id: "GHSA-z", severity: "critical" }] });
+  const ledger: Ledger = { "foo@1": { name: "foo", version: "1", addedAt: "x", risk: "low", reason: null, addedBy: null, checks: { ageHours: 1, installScripts: false } } };
+  const drift = detectDrift(ledger, { foo: [{ id: "GHSA-z", severity: "critical" }] }, { foo: "1" });
   assert.deepEqual(drift[0].newAdvisories, [{ id: "GHSA-z", severity: "critical" }]);
 });
 
 test("detectDrift ignores resolved advisories (acknowledged but no longer live)", () => {
-  const ledger: Ledger = { lodash: entry("4.17.20", [{ id: "GHSA-old", severity: "low" }]) };
-  assert.deepEqual(detectDrift(ledger, { lodash: [] }), []);
+  const ledger: Ledger = { "lodash@4.17.20": entry("lodash", "4.17.20", ["GHSA-old"]) };
+  assert.deepEqual(detectDrift(ledger, { lodash: [] }, { lodash: "4.17.20" }), []);
+});
+
+const e = (name: string, version: string, ackIds: string[]): Ledger[string] => ({
+  name, version, addedAt: "t", risk: "low", reason: null, addedBy: null,
+  checks: { ageHours: 1, installScripts: false },
+  cve: { acknowledged: ackIds.map((id) => ({ id, severity: "low" as const })), acknowledgedBy: "a", acknowledgedAt: "t", reason: "ok" },
+});
+
+test("detectDrift keys acknowledgement by the INSTALLED name@version", () => {
+  const ledger: Ledger = { "lodash@4.17.20": e("lodash", "4.17.20", ["GHSA-old"]) };
+  const live = { lodash: [{ id: "GHSA-old", severity: "low" as const }, { id: "GHSA-new", severity: "high" as const }] };
+  const drift = detectDrift(ledger, live, { lodash: "4.17.20" });
+  assert.equal(drift.length, 1);
+  assert.deepEqual(drift[0].newAdvisories.map((a) => a.id), ["GHSA-new"]);
+});
+
+test("detectDrift: acking lodash@4.17.20 does NOT suppress drift on 4.17.21", () => {
+  const ledger: Ledger = { "lodash@4.17.20": e("lodash", "4.17.20", ["GHSA-old"]) };
+  const live = { lodash: [{ id: "GHSA-old", severity: "low" as const }] };
+  const drift = detectDrift(ledger, live, { lodash: "4.17.21" });
+  assert.equal(drift.length, 1);
+  assert.deepEqual(drift[0].newAdvisories.map((a) => a.id), ["GHSA-old"]);
+});
+
+test("detectDrift skips a live package with no resolved installed version", () => {
+  const ledger: Ledger = {};
+  const live = { lodash: [{ id: "GHSA-x", severity: "low" as const }] };
+  assert.deepEqual(detectDrift(ledger, live, {}), []);
 });

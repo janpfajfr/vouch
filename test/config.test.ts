@@ -52,17 +52,42 @@ test("rejects an invalid enum value instead of silently downgrading the gate", a
 test("accepts valid enum values", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
-    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block", requirePinned: "warn", packageManager: "pnpm" }));
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "warn", requirePinned: "warn", packageManager: "pnpm" }));
     const cfg = await loadConfig(dir);
-    assert.equal(cfg.versionDrift, "block");
+    assert.equal(cfg.versionDrift, "warn");
     assert.equal(cfg.requirePinned, "warn");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("versionDrift defaults to warn", () => {
-  assert.equal(DEFAULT_CONFIG.versionDrift, "warn");
+test("versionDrift is no longer a default (deprecated, ignored by check)", () => {
+  assert.equal(DEFAULT_CONFIG.versionDrift, undefined);
+});
+
+test("requirePinned 'block' is rejected with a clear migration message", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ requirePinned: "block" }));
+    await assert.rejects(loadConfig(dir), /requirePinned.*no longer supports "block"/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("versionDrift is still accepted (validated) during the deprecation window", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "block" }));
+    const cfg = await loadConfig(dir);
+    assert.equal(cfg.versionDrift, "block");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a versionDrift typo still errors (enum still validated)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ versionDrift: "blcok" }));
+    await assert.rejects(loadConfig(dir), /versionDrift.*one of/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("requirePinned defaults to off (opt-in)", () => {

@@ -8,15 +8,14 @@ import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, o
 import { detectPM, detectPMFromSignals, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { createNpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWithCve } from "./check-command.js";
+import { createVersionResolver, type VersionResolver } from "./installed.js";
+import { splitNameVersion, ledgerKey } from "./spec.js";
 import { createNpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
 import { gitIdentity } from "./identity.js";
 import { wordmark, shouldShowWordmark, statusHeader, type OutputOpts } from "./art.js";
 
-export function parseSpec(spec: string): { name: string; version: string | undefined } {
-  const at = spec.lastIndexOf("@");
-  if (at > 0) return { name: spec.slice(0, at), version: spec.slice(at + 1) };
-  return { name: spec, version: undefined };
-}
+/** Re-exported from spec.ts — the single '@' boundary. Kept here for back-compat of the CLI's test surface. */
+export const parseSpec = splitNameVersion;
 
 export interface AddArgs { spec?: string; dev: boolean; force: string | null; error?: string; }
 
@@ -92,9 +91,8 @@ function settingsBlock(pm: PM | "auto"): string[] {
     "  blockInstallScripts: true,",
     "  requireCooldownConfigured: false,",
     "",
-    "  // CI gate — `vouch check`",
-    `  versionDrift: "warn",            // "warn" | "block" | "off"`,
-    `  requirePinned: "off",            // "warn" | "block" | "off"`,
+    "  // CI gate — `vouch check` (always version-aware: asserts the exact installed name@version was reviewed)",
+    `  requirePinned: "off",            // "warn" | "off"`,
     "  checkPeerDependencies: false,    // also gate peerDependencies (prod/dev/optional always gated)",
     "",
     "  // CVE handling at add time",
@@ -272,14 +270,15 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   if (code !== 0) { opts.err(`Install failed (exit ${code}); ledger not written.`); return code; }
 
   const entry: LedgerEntry = {
-    approvedVersion: meta.version,
+    name,
+    version: meta.version,
     addedAt: opts.now().toISOString(),
     risk,
     reason: opts.force ?? null,
     addedBy: (opts.identity ?? (() => gitIdentity()))(),
     checks: { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts: (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false; })() },
   };
-  writeLedger(opts.cwd, upsertEntry(readLedger(opts.cwd), name, entry));
+  writeLedger(opts.cwd, upsertEntry(readLedger(opts.cwd), name, meta.version, entry));
   opts.log(statusHeader("success", "Recorded dependency decision", o));
   opts.log("");
   opts.log(`  ${id}`);
@@ -289,7 +288,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
 }
 
 export interface AcknowledgeOptions {
-  pkg: string;
+  pkg: string;            // "name" (resolve installed) or explicit "name@version"
   reason: string;
   identity: () => string | null;
   client: AdvisoryClient;
@@ -297,23 +296,31 @@ export interface AcknowledgeOptions {
   cwd: string;
   log: (s: string) => void;
   err: (s: string) => void;
+  resolver?: VersionResolver; // injected in tests; defaults to the real node_modules walk
 }
 
 export async function runAcknowledge(opts: AcknowledgeOptions): Promise<number> {
   const ledger = readLedger(opts.cwd);
-  const entry = ledger[opts.pkg];
-  if (!entry) { opts.err(`Not in ledger: ${opts.pkg}`); return 1; }
+  const { name, version } = splitNameVersion(opts.pkg);
+  const resolver = opts.resolver ?? createVersionResolver(opts.cwd);
+  const v = version ?? resolver.resolve(opts.cwd, name) ?? undefined;
+  if (v === undefined) {
+    opts.err(`Not installed and no explicit version for ${name} — try \`vouch acknowledge ${name}@<version>\`.`);
+    return 1;
+  }
+  const entry = ledger[ledgerKey(name, v)];
+  if (!entry) { opts.err(`Not in ledger: ${name}@${v}`); return 1; }
 
-  const live = await opts.client.fetchBulk({ [opts.pkg]: [entry.approvedVersion] });
+  const live = await opts.client.fetchBulk({ [name]: [v] });
   if (live === null) {
-    opts.err(`Could not verify advisories for ${opts.pkg} (offline or registry error); ledger unchanged.`);
+    opts.err(`Could not verify advisories for ${name}@${v} (offline or registry error); ledger unchanged.`);
     return 1;
   }
 
-  const acknowledged = live[opts.pkg] ?? [];
+  const acknowledged = live[name] ?? [];
   const updated = { ...entry, cve: { acknowledged, acknowledgedBy: opts.identity(), acknowledgedAt: opts.now().toISOString(), reason: opts.reason } };
-  writeLedger(opts.cwd, upsertEntry(ledger, opts.pkg, updated));
-  opts.log(`Acknowledged ${opts.pkg}: ${acknowledged.length} advisor${acknowledged.length === 1 ? "y" : "ies"} accepted — "${opts.reason}".`);
+  writeLedger(opts.cwd, upsertEntry(ledger, name, v, updated));
+  opts.log(`Acknowledged ${name}@${v}: ${acknowledged.length} advisor${acknowledged.length === 1 ? "y" : "ies"} accepted — "${opts.reason}".`);
   return 0;
 }
 
@@ -358,7 +365,8 @@ async function main(argv: string[]): Promise<number> {
     const cfg = await loadConfig(cwd);
     const pkg = readPackageJson(cwd);
     const ledger = readLedger(cwd);
-    const { violations, warnings } = await runCheckWithCve(pkg, ledger, cfg, createNpmAdvisoryClient());
+    const resolver = createVersionResolver(cwd);
+    const { violations, warnings } = await runCheckWithCve(pkg, cwd, ledger, cfg, createNpmAdvisoryClient(), resolver);
     if (violations.length === 0) {
       console.log(statusHeader("success", "Dependency review passed", o));
       console.log("");
@@ -371,14 +379,14 @@ async function main(argv: string[]): Promise<number> {
     for (const w of warnings) console.error(`  - ${w}`);
     for (const v of violations) console.error(`  - ${v.package}: ${v.reason}`);
     console.error("");
-    // Name the actual unrecorded packages in the fix-it hint (with -D for devDeps),
-    // rather than a generic `vouch <package>`. Other violation types (CVE/version
-    // drift, unexplained high-risk) carry their own fix in the reason line above.
-    const unrecorded = violations.filter((v) => v.reason === "missing ledger entry");
+    // Name the unrecorded versions in the fix-it hint (with -D for devDeps). The reason
+    // line already embeds `vouch name@version`; this repeats it as a ready-to-run list.
+    const unrecorded = violations.filter((v) => /never reviewed/.test(v.reason));
     if (unrecorded.length > 0) {
       console.error(`  Next — record the unrecorded dependenc${unrecorded.length === 1 ? "y" : "ies"}:`);
       for (const v of unrecorded) {
-        const dev = Boolean(pkg.devDependencies && v.package in pkg.devDependencies);
+        const { name } = splitNameVersion(v.package);
+        const dev = Boolean(pkg.devDependencies && name in pkg.devDependencies);
         console.error(`    vouch ${v.package}${dev ? " -D" : ""}`);
       }
     } else {

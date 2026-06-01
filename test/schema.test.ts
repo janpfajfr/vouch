@@ -11,6 +11,7 @@ test("schema.json covers every Config key in DEFAULT_CONFIG", () => {
   const schema = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "schema.json"), "utf8"));
   const schemaKeys = new Set(Object.keys(schema.properties));
   schemaKeys.delete("$schema"); // editor-only, not a runtime field
+  schemaKeys.delete("versionDrift"); // deprecated: still schema-documented for the editor, but no longer a DEFAULT_CONFIG key
   const configKeys = new Set(Object.keys(DEFAULT_CONFIG));
   assert.deepEqual([...schemaKeys].sort(), [...configKeys].sort(), "schema and DEFAULT_CONFIG keys must match");
 });

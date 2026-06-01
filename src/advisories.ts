@@ -1,4 +1,5 @@
 import type { CveSeverity, Ledger } from "./ledger.js";
+import { ledgerKey } from "./spec.js";
 
 export interface Advisory {
   id: string;
@@ -14,11 +15,17 @@ export interface CveDrift {
   newAdvisories: Advisory[];
 }
 
-/** For each live package, the advisories whose id is not in the entry's acknowledged set. */
-export function detectDrift(ledger: Ledger, live: Record<string, Advisory[]>): CveDrift[] {
+/** For each live package, the advisories whose id is not acknowledged on the
+ *  INSTALLED name@version entry. Acknowledgement is version-scoped. */
+export function detectDrift(
+  ledger: Ledger,
+  live: Record<string, Advisory[]>,
+  installed: Record<string, string>,
+): CveDrift[] {
   const drift: CveDrift[] = [];
   for (const [name, advisories] of Object.entries(live)) {
-    const ackIds = new Set((ledger[name]?.cve?.acknowledged ?? []).map((a) => a.id));
+    if (!(name in installed)) continue; // couldn't resolve a version → nothing to key on
+    const ackIds = new Set((ledger[ledgerKey(name, installed[name])]?.cve?.acknowledged ?? []).map((a) => a.id));
     const newAdvisories = advisories.filter((a) => !ackIds.has(a.id));
     if (newAdvisories.length > 0) drift.push({ package: name, newAdvisories });
   }

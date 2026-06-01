@@ -48,13 +48,14 @@
       "type": "string",
       "enum": ["warn", "block", "off"],
       "default": "warn",
-      "description": "What `vouch check` does when a recorded approvedVersion no longer satisfies the package.json range — i.e. a decision was made for a version you no longer ship. Compared against the manifest range (no lockfile)."
+      "deprecated": true,
+      "description": "Deprecated and ignored. `vouch check` is now always version-aware: it resolves each dependency's installed version from node_modules and asserts that exact name@version was reviewed. The versionDrift setting has no effect and will be removed in a future release."
     },
     "requirePinned": {
       "type": "string",
-      "enum": ["warn", "block", "off"],
+      "enum": ["warn", "off"],
       "default": "off",
-      "description": "Opt-in pinning policy. 'warn' or 'block' on recorded deps that use a range (^, ~, ...) instead of an exact version. Default off to avoid flooding typical ^-range projects."
+      "description": "Opt-in pinning policy. 'warn' on recorded deps that use a range (^, ~, ...) instead of an exact version. Default off to avoid flooding typical ^-range projects."
     },
     "checkPeerDependencies": {
       "type": "boolean",

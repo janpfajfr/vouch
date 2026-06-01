@@ -34,7 +34,10 @@ and conscience for your `package.json`.
 1. **Every dependency is a decision.** Adding one should be recorded — with who and why —
    not slipped into a lockfile diff nobody reads.
 2. **The record lives in your repo.** Decisions go into a committed ledger
-   (`.security/dependency-approvals.json`), visible in the PR diff and auditable forever.
+   (`.security/dependency-approvals.json`), keyed by `name@version` and wrapped in a
+   `{ "version": 2, "entries": { … } }` envelope, visible in the PR diff and auditable forever.
+   Ledgers from 0.1.x (name-keyed) auto-migrate on first read; the updated file appears in
+   the next mutation's diff.
 3. **The record stays honest over time.** When a dependency you recorded later gains a known
    advisory, or its version drifts from what was reviewed, CI surfaces it until a human
    re-decides.
@@ -155,11 +158,12 @@ usual, and `check` passes because the committed ledger already covers every depe
   too when `checkPeerDependencies` is enabled);
 - a dependency **gained a CVE** that no human has acknowledged;
 - a **high-risk** entry has **no `reason`** recorded for the reviewer to judge;
-- **version drift** — a recorded version no longer satisfies the `package.json` range
-  (`versionDrift`: `"warn"` by default, `"block"`, or `"off"`; direct deps, compared against
-  the range, no lockfile);
-- **pinning** — an opt-in `requirePinned` (`"warn"`/`"block"`, default `"off"`) flags deps
-  that use a range instead of an exact version, suggesting the recorded version to pin to.
+- **version drift** — `check` resolves each dependency's **installed version** from
+  `node_modules` and asserts that exact `name@version` was reviewed. Run `check` after a
+  complete install. If installed versions have drifted from what was recorded, run
+  `vouch <pkg>@<installed>` to re-record them;
+- **pinning** — an opt-in `requirePinned` (`"warn"`, default `"off"`) flags deps that use a
+  range instead of an exact version, suggesting the recorded version to pin to.
 
 > **Scope:** `vouch check` governs the `package.json` in the directory it runs from, covering
 > `dependencies`, `devDependencies`, and `optionalDependencies` (plus `peerDependencies` when
@@ -240,8 +244,7 @@ export default defineConfig({
   requireCooldownConfigured: false,
 
   // CI gate — `vouch check`
-  versionDrift: "warn",              // "warn" | "block" | "off"
-  requirePinned: "off",              // "warn" | "block" | "off"
+  requirePinned: "off",              // "warn" | "off"
   checkPeerDependencies: false,      // also gate peerDependencies (prod/dev/optional always gated)
 
   // CVE handling at add time

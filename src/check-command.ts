@@ -1,7 +1,10 @@
+// src/check-command.ts
 import type { Config } from "./config.js";
 import type { Ledger } from "./ledger.js";
 import { detectDrift, type AdvisoryClient } from "./advisories.js";
-import { satisfiesRange, isExactPin } from "./semver.js";
+import { isExactPin } from "./semver.js";
+import { ledgerKey } from "./spec.js";
+import { isProtocolRange, type VersionResolver } from "./installed.js";
 
 export interface PackageJsonLike {
   dependencies?: Record<string, string>;
@@ -10,12 +13,11 @@ export interface PackageJsonLike {
   peerDependencies?: Record<string, string>;
 }
 
-export interface CheckViolation { package: string; reason: string; }
+export interface CheckViolation { package: string; reason: string; workspace?: string; }
 
 /** Direct dependencies as a name → range map — the single place that enumerates
- *  package.json deps, so every check sees the same set. Always includes prod, dev,
- *  and optional (all install by default). peerDependencies are included only when
- *  cfg.checkPeerDependencies is set (they're typically host-provided). */
+ *  package.json deps, so every check sees the same set. Prod, dev, and optional always;
+ *  peerDependencies only when cfg.checkPeerDependencies is set. */
 export function directDeps(pkg: PackageJsonLike, cfg?: { checkPeerDependencies: boolean }): Record<string, string> {
   return {
     ...pkg.dependencies,
@@ -25,52 +27,60 @@ export function directDeps(pkg: PackageJsonLike, cfg?: { checkPeerDependencies: 
   };
 }
 
-export function runCheck(pkg: PackageJsonLike, ledger: Ledger, cfg: Config): CheckViolation[] {
+/** Version-aware check for a single package. Resolves each declared dep's installed
+ *  version (skipping protocol ranges) and looks up `name@version` in the ledger. */
+export function checkPackage(
+  pkg: PackageJsonLike,
+  workspaceDir: string,
+  relPath: string,
+  ledger: Ledger,
+  resolver: VersionResolver,
+  cfg: Config,
+): CheckViolation[] {
   const violations: CheckViolation[] = [];
-  for (const name of Object.keys(directDeps(pkg, cfg))) {
-    const entry = ledger[name];
+  for (const [name, range] of Object.entries(directDeps(pkg, cfg))) {
+    if (isProtocolRange(range)) continue; // internal/non-registry edge — not reviewed
+    const installed = resolver.resolve(workspaceDir, name);
+    if (installed === null) {
+      violations.push({ workspace: relPath, package: name, reason: "declared but not installed — run your package manager's install." });
+      continue;
+    }
+    const entry = ledger[ledgerKey(name, installed)];
     if (!entry) {
-      violations.push({ package: name, reason: "missing ledger entry" });
+      violations.push({ workspace: relPath, package: `${name}@${installed}`, reason: `this exact version was never reviewed — vouch ${name}@${installed}` });
       continue;
     }
     if (entry.risk === "high" && (!entry.reason || entry.reason.trim() === "")) {
-      violations.push({ package: name, reason: "high-risk decision needs a reason in the ledger so a reviewer can judge it." });
+      violations.push({ workspace: relPath, package: `${name}@${installed}`, reason: "high-risk decision needs a reason in the ledger so a reviewer can judge it." });
     }
   }
   return violations;
 }
 
-export interface VersionDrift { package: string; recorded: string; range: string; }
-
-/** Direct deps whose recorded version no longer satisfies the package.json range.
- *  Compares against package.json ranges only (no lockfile). Unparseable ranges are
- *  skipped (satisfiesRange returns null) so they never produce a false drift. */
-export function detectVersionDrift(pkg: PackageJsonLike, ledger: Ledger, cfg?: { checkPeerDependencies: boolean }): VersionDrift[] {
-  const drift: VersionDrift[] = [];
-  for (const [name, range] of Object.entries(directDeps(pkg, cfg))) {
-    const entry = ledger[name];
-    if (!entry) continue; // unrecorded is already a violation in runCheck
-    if (satisfiesRange(entry.approvedVersion, range) === false) {
-      drift.push({ package: name, recorded: entry.approvedVersion, range });
-    }
-  }
-  return drift;
+/** Single-package check (cwd). Plan 2 adds a workspace-aware aggregator over checkPackage. */
+export function runCheck(pkg: PackageJsonLike, workspaceDir: string, ledger: Ledger, resolver: VersionResolver, cfg: Config): CheckViolation[] {
+  return checkPackage(pkg, workspaceDir, ".", ledger, resolver, cfg);
 }
 
-export function versionDriftMessage(d: VersionDrift): string {
-  return `recorded at ${d.recorded}, but package.json now requires "${d.range}" — re-record the version a human reviewed: vouch ${d.package}@${d.recorded} (or vouch ${d.package} for the latest).`;
-}
+export interface Unpinned { package: string; range: string; recorded: string; workspace?: string; }
 
-export interface Unpinned { package: string; range: string; recorded: string; }
-
-/** Recorded direct deps whose package.json range is not an exact pin.
- *  Skips unrecorded deps (already a violation in runCheck). */
-export function detectUnpinned(pkg: PackageJsonLike, ledger: Ledger, cfg?: { checkPeerDependencies: boolean }): Unpinned[] {
+/** Recorded direct deps whose package.json range is not an exact pin. Skips protocol
+ *  ranges (never exact pins) and unrecorded/uninstalled deps. */
+export function detectUnpinned(
+  pkg: PackageJsonLike,
+  workspaceDir: string,
+  relPath: string,
+  ledger: Ledger,
+  resolver: VersionResolver,
+  cfg: Config,
+): Unpinned[] {
   const out: Unpinned[] = [];
   for (const [name, range] of Object.entries(directDeps(pkg, cfg))) {
-    const entry = ledger[name];
-    if (!entry) continue;
-    if (!isExactPin(range)) out.push({ package: name, range, recorded: entry.approvedVersion });
+    if (isProtocolRange(range)) continue;
+    const installed = resolver.resolve(workspaceDir, name);
+    if (installed === null) continue;
+    if (!ledger[ledgerKey(name, installed)]) continue; // unrecorded is already a violation
+    if (!isExactPin(range)) out.push({ workspace: relPath, package: name, range, recorded: installed });
   }
   return out;
 }
@@ -81,32 +91,37 @@ export function unpinnedMessage(u: Unpinned): string {
 
 export async function runCheckWithCve(
   pkg: PackageJsonLike,
+  workspaceDir: string,
   ledger: Ledger,
   cfg: Config,
   client: AdvisoryClient,
+  resolver: VersionResolver,
 ): Promise<{ violations: CheckViolation[]; warnings: string[] }> {
-  const violations = runCheck(pkg, ledger, cfg);
+  const violations = runCheck(pkg, workspaceDir, ledger, resolver, cfg);
   const warnings: string[] = [];
 
-  if (cfg.versionDrift !== "off") {
-    for (const d of detectVersionDrift(pkg, ledger, cfg)) {
-      if (cfg.versionDrift === "block") violations.push({ package: d.package, reason: versionDriftMessage(d) });
-      else warnings.push(`${d.package} — ${versionDriftMessage(d)}`);
-    }
+  if (cfg.versionDrift !== undefined && cfg.versionDrift !== "off") {
+    warnings.push("versionDrift is no longer used — check is always version-aware now (the config key is ignored and will be removed in a future release).");
   }
 
   if (cfg.requirePinned !== "off") {
-    for (const u of detectUnpinned(pkg, ledger, cfg)) {
-      if (cfg.requirePinned === "block") violations.push({ package: u.package, reason: unpinnedMessage(u) });
-      else warnings.push(`${u.package} — ${unpinnedMessage(u)}`);
+    for (const u of detectUnpinned(pkg, workspaceDir, ".", ledger, resolver, cfg)) {
+      warnings.push(`${u.package} — ${unpinnedMessage(u)}`);
     }
   }
 
-  const pkgVersions: Record<string, string[]> = {};
-  for (const name of Object.keys(directDeps(pkg, cfg))) {
-    const entry = ledger[name];
-    if (entry) pkgVersions[name] = [entry.approvedVersion];
+  // Installed-version map for both the CVE query and drift keying. NOTE: this re-resolves
+  // versions already resolved in runCheck/checkPackage — fine for single-package; if it shows
+  // up under Plan 2's per-workspace fan-out, memoize the resolver by (workspaceDir, name) per
+  // run (spec §14).
+  const installed: Record<string, string> = {};
+  for (const [name, range] of Object.entries(directDeps(pkg, cfg))) {
+    if (isProtocolRange(range)) continue;
+    const v = resolver.resolve(workspaceDir, name);
+    if (v !== null) installed[name] = v;
   }
+  const pkgVersions: Record<string, string[]> = {};
+  for (const [name, v] of Object.entries(installed)) pkgVersions[name] = [v];
 
   const live = await client.fetchBulk(pkgVersions);
   if (live === null) {
@@ -116,13 +131,10 @@ export async function runCheckWithCve(
     return { violations, warnings };
   }
 
-  for (const d of detectDrift(ledger, live)) {
-    const version = ledger[d.package]?.approvedVersion ?? "?";
+  for (const d of detectDrift(ledger, live, installed)) {
+    const version = installed[d.package] ?? "?";
     for (const a of d.newAdvisories) {
-      violations.push({
-        package: `${d.package}@${version}`,
-        reason: cveDriftMessage(d.package, a.id, a.severity),
-      });
+      violations.push({ package: `${d.package}@${version}`, reason: cveDriftMessage(d.package, a.id, a.severity) });
     }
   }
   return { violations, warnings };
