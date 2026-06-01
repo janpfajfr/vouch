@@ -100,7 +100,7 @@ export async function runCheckWithCve(
   const violations = runCheck(pkg, workspaceDir, ledger, resolver, cfg);
   const warnings: string[] = [];
 
-  if (cfg.versionDrift !== undefined) {
+  if (cfg.versionDrift !== undefined && cfg.versionDrift !== "off") {
     warnings.push("versionDrift is no longer used — check is always version-aware now (the config key is ignored and will be removed in a future release).");
   }
 

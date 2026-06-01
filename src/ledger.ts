@@ -85,6 +85,12 @@ export function normalizeLedger(parsed: unknown): Ledger {
   // value, not the number 2, so this never misfires.)
   if (obj.version === 2 && typeof obj.entries === "object" && obj.entries !== null) return obj.entries as Ledger;
 
+  // A numeric top-level `version` other than 2 is a future format we don't understand.
+  // (A real v1 ledger never has a numeric `version` key — v1 values are entry objects.)
+  if (typeof obj.version === "number") {
+    throw new Error(`Invalid ${LEDGER_RELATIVE}: unsupported ledger version ${obj.version} (this vouch supports version 2). Upgrade vouch.`);
+  }
+
   // v1 (published 0.1.x): bare name -> entry map; entries carry approvedVersion.
   const out: Ledger = {};
   for (const [name, value] of Object.entries(obj)) {

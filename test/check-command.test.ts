@@ -113,6 +113,12 @@ test("runCheckWithCve warns once when the deprecated versionDrift key is set", a
   assert.ok(r.warnings.some((w) => /versionDrift is no longer used/i.test(w)));
 });
 
+test("runCheckWithCve does NOT warn when versionDrift is explicitly off", async () => {
+  const cfg = { ...DEFAULT_CONFIG, versionDrift: "off" as const };
+  const r = await runCheckWithCve({ dependencies: {} }, WS, {}, cfg, fakeClient({}), resolverOf({}));
+  assert.ok(!r.warnings.some((w) => /versionDrift is no longer used/i.test(w)));
+});
+
 test("detectUnpinned skips protocol ranges and unrecorded deps; flags ranged recorded ones", () => {
   const ledger: Ledger = { "lodash@4.18.1": entry("lodash", "4.18.1") };
   const u = detectUnpinned(

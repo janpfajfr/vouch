@@ -110,6 +110,10 @@ test("a v1 entry without approvedVersion fails closed", () => {
   assert.throws(() => normalizeLedger({ lodash: { addedAt: "t", risk: "low" } }), /approvedVersion/);
 });
 
+test("normalizeLedger throws on an unsupported future ledger version", () => {
+  assert.throws(() => normalizeLedger({ version: 3, entries: {} }), /unsupported ledger version 3/i);
+});
+
 test("readLedger migrates a v1-format file from disk", () => {
   const dir = tmp();
   try {
