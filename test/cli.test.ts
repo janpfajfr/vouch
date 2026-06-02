@@ -497,6 +497,23 @@ test("runAcknowledge targets the explicit name@version spec", async () => {
 const reg = regV2;
 const noInstall = noInstallV2;
 
+test("runSafeAdd records checks.advisories from the install-time advisory fetch", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-add-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "host", dependencies: {} }));
+    const advisoryClient = { async fetchBulk() { return { lodash: [{ id: "GHSA-x", severity: "moderate" as const }] }; } };
+    await runSafeAdd({
+      spec: "lodash@4.17.21", dev: false, force: null,
+      registry: { async fetchMetadata(name) { return { name, version: "4.17.21", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false }; } },
+      installer: { async install() { return 0; } },
+      advisoryClient,
+      identity: noIdentity,
+      now: () => new Date("2026-05-31T00:00:00Z"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.deepEqual(readLedger(dir)["lodash@4.17.21"].checks.advisories, [{ id: "GHSA-x", severity: "moderate" }]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("runSafeAdd writes to the injected ledgerDir (root), not cwd", async () => {
   const root = mkdtempSync(join(tmpdir(), "ysna-"));
   try {
