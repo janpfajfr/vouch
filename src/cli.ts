@@ -254,6 +254,9 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   // even when allowlisted (a known CVE on a trusted scope is still worth flagging).
   // Shape by cfg.cveAtInstall: "warn"→note, "block"→blocks at/above the severity threshold,
   // "off"→skip the fetch entirely. Fail-open: an unreachable service returns null and stays silent.
+  // The same fetch doubles as the recorded advisory baseline (checks.advisories). When
+  // cveAtInstall is "off" no fetch runs, so no baseline is recorded and the entry degrades to
+  // "present-at-record" at check time — the safe direction (never a false "NEW since recorded").
   let recordedAdvisories: Advisory[] | undefined;
   if (opts.advisoryClient && cfg.cveAtInstall !== "off") {
     const live = await opts.advisoryClient.fetchBulk({ [name]: [meta.version] });
