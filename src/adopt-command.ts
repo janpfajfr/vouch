@@ -7,7 +7,7 @@ import { isProtocolRange, type VersionResolver } from "./installed.js";
 import type { WorkspacePackage } from "./workspaces.js";
 import { checkVersionAge, checkInstallScripts, checkDeprecated, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import type { RegistryClient } from "./registry.js";
-import type { AdvisoryClient } from "./advisories.js";
+import type { AdvisoryClient, Advisory as AdvisoryRef } from "./advisories.js";
 
 export interface AdoptOptions {
   reason: string;
@@ -74,6 +74,17 @@ export async function runAdopt(opts: AdoptOptions): Promise<number> {
 
   const addedBy = opts.identity();
   const list = [...candidates.values()];
+
+  // One bulk advisory fetch for all candidates, used both to baseline each entry
+  // (checks.advisories) and for the summary count. null = offline/unconfigured →
+  // no baseline recorded (entries omit the field; check treats them as legacy).
+  let liveByName: Record<string, AdvisoryRef[]> | null = null;
+  if (opts.advisoryClient) {
+    const pkgVersions: Record<string, string[]> = {};
+    for (const c of list) (pkgVersions[c.name] ??= []).push(c.version);
+    liveByName = await opts.advisoryClient.fetchBulk(pkgVersions);
+  }
+
   const built = await pool(list, opts.concurrency ?? 8, async (c): Promise<{ entry: LedgerEntry } | null> => {
     let meta;
     try {
@@ -92,9 +103,11 @@ export async function runAdopt(opts: AdoptOptions): Promise<number> {
       const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter((k) => meta.scripts[k]).map((k) => [k, meta.scripts[k]]));
       return Object.keys(s).length > 0 ? s : false as const;
     })();
+    const checks: LedgerEntry["checks"] = { ageHours: ageHours(meta.publishedAt, now), installScripts };
+    if (liveByName !== null) checks.advisories = liveByName[c.name] ?? [];
     const entry: LedgerEntry = {
       name: c.name, version: c.version, addedAt: now.toISOString(), risk,
-      reason: opts.reason, addedBy, checks: { ageHours: ageHours(meta.publishedAt, now), installScripts },
+      reason: opts.reason, addedBy, checks,
     };
     return { entry };
   });
@@ -110,12 +123,11 @@ export async function runAdopt(opts: AdoptOptions): Promise<number> {
   }
   if (recorded.length > 0) writeLedger(opts.repoRoot, merged);
 
+  // Summary count reuses the same fetch: packages (by name) with at least one advisory.
   let advisoryCount: number | null = null;
-  if (opts.advisoryClient && recorded.length > 0) {
-    const pkgVersions: Record<string, string[]> = {};
-    for (const r of recorded) (pkgVersions[r.name] ??= []).push(r.version);
-    const live = await opts.advisoryClient.fetchBulk(pkgVersions);
-    if (live !== null) advisoryCount = Object.values(live).filter((a) => a.length > 0).length;
+  if (liveByName !== null && recorded.length > 0) {
+    const recordedNames = new Set(recorded.map((r) => r.name));
+    advisoryCount = Object.entries(liveByName).filter(([name, a]) => recordedNames.has(name) && a.length > 0).length;
   }
 
   printSummary(opts, recorded.length, highRisk, skipped, advisoryCount);
