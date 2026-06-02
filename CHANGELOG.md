@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-02
+
 ### Added
 
 - **`init` now seeds `AGENTS.md`.** Alongside the config, `vouch init` writes the agent dependency rules to `AGENTS.md` at the repo root so coding agents read them. It creates the file if absent, appends a fenced `<!-- vouch:begin -->…<!-- vouch:end -->` section to an existing one (preserving prior content), and is idempotent — a re-run never duplicates the section.
