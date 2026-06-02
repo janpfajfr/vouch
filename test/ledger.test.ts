@@ -129,3 +129,17 @@ test("readLedger migrates a v1-format file from disk", () => {
 test("normalizeLedger rejects a top-level array", () => {
   assert.throws(() => normalizeLedger([{ approvedVersion: "1.0.0" }]), /expected an object/);
 });
+
+test("checks.advisories round-trips through write/read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-led-"));
+  try {
+    const ledger: Ledger = {
+      "lodash@4.17.21": {
+        name: "lodash", version: "4.17.21", addedAt: "t", risk: "low", reason: null, addedBy: null,
+        checks: { ageHours: 1, installScripts: false, advisories: [{ id: "GHSA-x", severity: "high" }] },
+      },
+    };
+    writeLedger(dir, ledger);
+    assert.deepEqual(readLedger(dir)["lodash@4.17.21"].checks.advisories, [{ id: "GHSA-x", severity: "high" }]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

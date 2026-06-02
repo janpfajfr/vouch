@@ -1,7 +1,7 @@
 // test/check-command.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runCheck, runCheckWithCve, detectUnpinned } from "../src/check-command.js";
+import { runCheck, runCheckWithCve, detectUnpinned, cveDriftMessage } from "../src/check-command.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 import type { Ledger, LedgerEntry } from "../src/ledger.js";
 import type { VersionResolver } from "../src/installed.js";
@@ -194,4 +194,33 @@ test("runCheckWorkspaces: protocol ranges skipped, internal libs not flagged", a
   const workspaces = [ws("apps/elis", { dependencies: { "@rossum/api": "workspace:*" } })];
   const r = await runCheckWorkspaces(workspaces, {}, DEFAULT_CONFIG, fakeClient({}), wsResolver({}));
   assert.deepEqual(r.violations, []);
+});
+
+test("cveDriftMessage: present-at-record wording", () => {
+  const m = cveDriftMessage("lodash", "GHSA-x", "high", "present-at-record");
+  assert.match(m, /not yet acknowledged/i);
+  assert.doesNotMatch(m, /NEW/);
+  assert.match(m, /vouch acknowledge lodash/);
+});
+
+test("cveDriftMessage: new-since-record wording", () => {
+  const m = cveDriftMessage("lodash", "GHSA-x", "high", "new-since-record");
+  assert.match(m, /NEW advisory since it was recorded/);
+  assert.match(m, /vouch acknowledge lodash/);
+});
+
+test("runCheckWithCve labels a baseline advisory present-at-record, not NEW", async () => {
+  const ledger: Ledger = { "lodash@4.17.20": entry("lodash", "4.17.20", { checks: { ageHours: 1, installScripts: false, advisories: [{ id: "GHSA-old", severity: "low" }] } }) };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, WS, ledger, DEFAULT_CONFIG,
+    fakeClient({ lodash: [{ id: "GHSA-old", severity: "low" }] }), resolverOf({ lodash: "4.17.20" }));
+  const v = r.violations.find((x) => x.package === "lodash@4.17.20");
+  assert.ok(v && /not yet acknowledged/i.test(v.reason) && !/NEW/.test(v.reason));
+});
+
+test("runCheckWithCve labels an advisory absent from the baseline as NEW", async () => {
+  const ledger: Ledger = { "lodash@4.17.20": entry("lodash", "4.17.20", { checks: { ageHours: 1, installScripts: false, advisories: [] } }) };
+  const r = await runCheckWithCve({ dependencies: { lodash: "^4" } }, WS, ledger, DEFAULT_CONFIG,
+    fakeClient({ lodash: [{ id: "GHSA-new", severity: "high" }] }), resolverOf({ lodash: "4.17.20" }));
+  const v = r.violations.find((x) => x.package === "lodash@4.17.20");
+  assert.ok(v && /NEW advisory since it was recorded/.test(v.reason));
 });

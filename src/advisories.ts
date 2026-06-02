@@ -10,13 +10,20 @@ function normalizeSeverity(s: unknown): CveSeverity {
   return s === "moderate" || s === "high" || s === "critical" ? s : "low";
 }
 
+export type DriftKind = "present-at-record" | "new-since-record";
+export interface DriftAdvisory extends Advisory { kind: DriftKind; }
+
 export interface CveDrift {
   package: string;
-  newAdvisories: Advisory[];
+  newAdvisories: DriftAdvisory[];
 }
 
-/** For each live package, the advisories whose id is not acknowledged on the
- *  INSTALLED name@version entry. Acknowledgement is version-scoped. */
+/** For each live package, the unacknowledged advisories on the INSTALLED name@version
+ *  entry, each classified against the seen-at-record baseline (entry.checks.advisories):
+ *  - in the baseline  → "present-at-record" (existed when recorded; needs acknowledgement)
+ *  - not in baseline  → "new-since-record"  (genuine drift)
+ *  An entry with no baseline (legacy / unrecorded) classifies everything as
+ *  "present-at-record" — we never claim a CVE is NEW when we don't know. */
 export function detectDrift(
   ledger: Ledger,
   live: Record<string, Advisory[]>,
@@ -25,8 +32,17 @@ export function detectDrift(
   const drift: CveDrift[] = [];
   for (const [name, advisories] of Object.entries(live)) {
     if (!(name in installed)) continue; // couldn't resolve a version → nothing to key on
-    const ackIds = new Set((ledger[ledgerKey(name, installed[name])]?.cve?.acknowledged ?? []).map((a) => a.id));
-    const newAdvisories = advisories.filter((a) => !ackIds.has(a.id));
+    const entry = ledger[ledgerKey(name, installed[name])];
+    const ackIds = new Set((entry?.cve?.acknowledged ?? []).map((a) => a.id));
+    const baseline = entry?.checks?.advisories;             // undefined = no baseline
+    const seenIds = new Set((baseline ?? []).map((a) => a.id));
+    const hasBaseline = baseline !== undefined;
+    const newAdvisories: DriftAdvisory[] = [];
+    for (const a of advisories) {
+      if (ackIds.has(a.id)) continue;                        // accepted → silent
+      const kind: DriftKind = hasBaseline && !seenIds.has(a.id) ? "new-since-record" : "present-at-record";
+      newAdvisories.push({ ...a, kind });
+    }
     if (newAdvisories.length > 0) drift.push({ package: name, newAdvisories });
   }
   return drift;

@@ -25,7 +25,7 @@ export interface LedgerEntry {
   risk: Risk;
   reason: string | null;
   addedBy: string | null;
-  checks: { ageHours: number | null; installScripts: Record<string, string> | false };
+  checks: { ageHours: number | null; installScripts: Record<string, string> | false; advisories?: AcknowledgedAdvisory[] };
   cve?: CveSnapshot;
 }
 

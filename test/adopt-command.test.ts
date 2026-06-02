@@ -119,6 +119,41 @@ test("skips protocol ranges (workspace:/catalog:)", async () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("records checks.advisories from the advisory feed", async () => {
+  const dir = tmp();
+  try {
+    const advisoryClient: AdvisoryClient = { async fetchBulk() { return { lodash: [{ id: "GHSA-x", severity: "high" }] }; } };
+    await adopt(dir, [ws("apps/elis", { dependencies: { lodash: "^4" } })], wsResolver({ "apps/elis": { lodash: "4.17.21" } }), { advisoryClient });
+    assert.deepEqual(readLedger(dir)["lodash@4.17.21"].checks.advisories, [{ id: "GHSA-x", severity: "high" }]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("records an empty advisories baseline when the feed reports none", async () => {
+  const dir = tmp();
+  try {
+    const advisoryClient: AdvisoryClient = { async fetchBulk() { return { }; } };
+    await adopt(dir, [ws("apps/elis", { dependencies: { lodash: "^4" } })], wsResolver({ "apps/elis": { lodash: "4.17.21" } }), { advisoryClient });
+    assert.deepEqual(readLedger(dir)["lodash@4.17.21"].checks.advisories, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("omits the baseline (no field) when the advisory service is offline", async () => {
+  const dir = tmp();
+  try {
+    const advisoryClient: AdvisoryClient = { async fetchBulk() { return null; } };
+    await adopt(dir, [ws("apps/elis", { dependencies: { lodash: "^4" } })], wsResolver({ "apps/elis": { lodash: "4.17.21" } }), { advisoryClient });
+    assert.equal(readLedger(dir)["lodash@4.17.21"].checks.advisories, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("omits the baseline when no advisory client is configured", async () => {
+  const dir = tmp();
+  try {
+    await adopt(dir, [ws("apps/elis", { dependencies: { lodash: "^4" } })], wsResolver({ "apps/elis": { lodash: "4.17.21" } }));
+    assert.equal(readLedger(dir)["lodash@4.17.21"].checks.advisories, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("countUnrecorded counts distinct unrecorded name@version across workspaces", () => {
   const workspaces = [ws("apps/elis", { dependencies: { zod: "^3", lodash: "^4" } }), ws("libs/api", { dependencies: { zod: "^4", lodash: "^4" } })];
   const resolver = wsResolver({ "apps/elis": { zod: "3.25.76", lodash: "4.17.21" }, "libs/api": { zod: "4.3.6", lodash: "4.17.21" } });

@@ -10,7 +10,7 @@ import { createNpmRegistryClient, PackageNotFoundError, RegistryUnavailableError
 import { runCheckWorkspaces, type CheckViolation } from "./check-command.js";
 import { createVersionResolver, type VersionResolver } from "./installed.js";
 import { splitNameVersion, ledgerKey } from "./spec.js";
-import { createNpmAdvisoryClient, type AdvisoryClient } from "./advisories.js";
+import { createNpmAdvisoryClient, type AdvisoryClient, type Advisory } from "./advisories.js";
 import { gitIdentity } from "./identity.js";
 import { wordmark, shouldShowWordmark, statusHeader, type OutputOpts } from "./art.js";
 import { findRepoRoot, discoverWorkspaces, type WorkspacePackage } from "./workspaces.js";
@@ -254,9 +254,14 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   // even when allowlisted (a known CVE on a trusted scope is still worth flagging).
   // Shape by cfg.cveAtInstall: "warn"→note, "block"→blocks at/above the severity threshold,
   // "off"→skip the fetch entirely. Fail-open: an unreachable service returns null and stays silent.
+  // The same fetch doubles as the recorded advisory baseline (checks.advisories). When
+  // cveAtInstall is "off" no fetch runs, so no baseline is recorded and the entry degrades to
+  // "present-at-record" at check time — the safe direction (never a false "NEW since recorded").
+  let recordedAdvisories: Advisory[] | undefined;
   if (opts.advisoryClient && cfg.cveAtInstall !== "off") {
     const live = await opts.advisoryClient.fetchBulk({ [name]: [meta.version] });
     const found = live?.[name] ?? [];
+    if (live !== null) recordedAdvisories = found; // real baseline (possibly []); null = offline → omit
     findings.push(checkKnownCve(name, found, cfg));
   }
   for (const f of findings) {
@@ -289,6 +294,9 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   const code = await opts.installer.install(pm, installArgs(pm, opts.spec, opts.dev));
   if (code !== 0) { opts.err(`Install failed (exit ${code}); ledger not written.`); return code; }
 
+  const installScripts = (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false as const; })();
+  const checks: LedgerEntry["checks"] = { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts };
+  if (recordedAdvisories !== undefined) checks.advisories = recordedAdvisories;
   const entry: LedgerEntry = {
     name,
     version: meta.version,
@@ -296,7 +304,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     risk,
     reason: opts.force ?? null,
     addedBy: (opts.identity ?? (() => gitIdentity()))(),
-    checks: { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts: (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false; })() },
+    checks,
   };
   writeLedger(ledgerDir, upsertEntry(readLedger(ledgerDir), name, meta.version, entry));
   opts.log(statusHeader("success", "Recorded dependency decision", o));
