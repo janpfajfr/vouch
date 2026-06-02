@@ -33,6 +33,11 @@ npm test        # type-check + run the test suite (node:test)
   and explicit types).
 - Update the README and `THREAT_MODEL.md` when you change user-facing behavior.
 
+## Releasing
+
+Maintainers: follow [`RELEASING.md`](RELEASING.md) to cut a version. Every release must end
+up in all three of npm, a git tag, and a GitHub Release.
+
 ## Reporting bugs
 
 Open an issue with a minimal reproduction, the `vouch --version` output, and your Node.js
