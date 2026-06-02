@@ -31,7 +31,8 @@ authorization. The actual approval is the human's PR/MR review, with the ledger 
 in the diff. An agent MUST NOT mark a risky dependency as acceptable on a human's behalf; its
 job is to surface the decision, not to make it.
 
-If `check` reports that a dependency gained a CVE since it was recorded, the agent MUST NOT
-silently accept it with `vouch acknowledge`. Surface it to a human, who fixes it, removes it,
+If `check` reports an unacknowledged CVE on a dependency — whether it was present when the
+dependency was recorded or appeared afterward — the agent MUST NOT silently accept it with
+`vouch acknowledge`. Surface it to a human, who fixes it, removes it,
 or — judging the risk acceptable — runs `vouch acknowledge <pkg> --reason "<why>"`, which is
 visible in the committed ledger and the PR diff.

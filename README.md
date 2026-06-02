@@ -193,8 +193,9 @@ defend.
 
 ## When `check` blocks on a CVE
 
-A block isn't damage — it's a pause: *something about a dependency you recorded changed.* Three
-honest options, in order of preference:
+A block isn't damage — it's a pause: *a dependency you recorded carries a CVE no human has signed
+off on — either one present when you recorded it (not yet acknowledged), or one that appeared
+since (`check` flags it as NEW).* Three honest options, in order of preference:
 
 1. **Fix it** — `vouch <pkg>@<patched-version>` to record a fixed release.
 2. **Remove or replace it** — drop the dependency, or swap in a lighter one.
