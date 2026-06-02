@@ -1,7 +1,7 @@
 // src/check-command.ts
 import type { Config } from "./config.js";
 import type { Ledger } from "./ledger.js";
-import { detectDrift, type AdvisoryClient } from "./advisories.js";
+import { detectDrift, type AdvisoryClient, type DriftKind } from "./advisories.js";
 import { isExactPin } from "./semver.js";
 import { ledgerKey } from "./spec.js";
 import { isProtocolRange, type VersionResolver } from "./installed.js";
@@ -135,16 +135,20 @@ export async function runCheckWithCve(
   for (const d of detectDrift(ledger, live, installed)) {
     const version = installed[d.package] ?? "?";
     for (const a of d.newAdvisories) {
-      violations.push({ package: `${d.package}@${version}`, reason: cveDriftMessage(d.package, a.id, a.severity) });
+      violations.push({ package: `${d.package}@${version}`, reason: cveDriftMessage(d.package, a.id, a.severity, a.kind) });
     }
   }
   return { violations, warnings };
 }
 
-/** The three honest paths, rendered as a block so CI output is actionable. */
-export function cveDriftMessage(pkg: string, id: string, severity: string): string {
+/** The three honest paths, rendered as a block so CI output is actionable.
+ *  `kind` shapes the opening line: an advisory present when recorded vs genuine drift. */
+export function cveDriftMessage(pkg: string, id: string, severity: string, kind: DriftKind): string {
+  const headline = kind === "new-since-record"
+    ? `${id} (${severity}) — NEW advisory since it was recorded.`
+    : `${id} (${severity}) — known when recorded, not yet acknowledged.`;
   return [
-    `gained ${id} (${severity}) since it was recorded.`,
+    headline,
     "",
     "  Options:",
     `  1. Fix:     vouch ${pkg}@<patched-version>`,
@@ -207,7 +211,7 @@ export async function runCheckWorkspaces(
         const dedupKey = `${d.package}@${version}::${a.id}`;
         if (seenDrift.has(dedupKey)) continue;
         seenDrift.add(dedupKey);
-        violations.push({ workspace: relPath, package: `${d.package}@${version}`, reason: cveDriftMessage(d.package, a.id, a.severity) });
+        violations.push({ workspace: relPath, package: `${d.package}@${version}`, reason: cveDriftMessage(d.package, a.id, a.severity, a.kind) });
       }
     }
   }
