@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-02
+
+### Added
+
+- **Advisory baseline at record time.** `vouch adopt` and `vouch <pkg>` now record the advisories present when a dependency is first recorded, in an optional `checks.advisories` field on each ledger entry. The field is additive — existing ledgers load unchanged, no migration. It lets `check` tell an advisory that already existed at record time from one that appeared afterward.
+
+### Fixed
+
+- **`check` no longer reports every known advisory as drift.** A freshly `adopt`-ed project previously saw every pre-existing advisory flagged as "gained … since it was recorded." `check` now classifies each unacknowledged advisory as either **present when recorded** ("known when recorded, not yet acknowledged") or **new since recorded** ("NEW advisory since it was recorded") — matching the threat model's "gained a new advisory *since*" intent. Entries with no recorded baseline (written before 0.3.0) degrade safely to the present-at-record wording, never a false "NEW". Both still require an explicit `vouch acknowledge --reason` — nothing is auto-accepted.
+
 ## [0.2.0] — 2026-06-01
 
 ### Added
