@@ -446,6 +446,50 @@ test("runInit: refuses to overwrite an existing vouch.config or legacy .safe-dep
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("runInit: creates AGENTS.md with the vouch dependency rules when none exists", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-agents-new-"));
+  try {
+    await runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const content = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    assert.match(content, /<!-- vouch:begin -->/);
+    assert.match(content, /<!-- vouch:end -->/);
+    assert.match(content, /@vouchjs\/vouch/);
+    // The core directive: don't install directly.
+    assert.match(content, /MUST NOT/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("runInit: appends a marked vouch section to an existing AGENTS.md, preserving prior content", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-agents-append-"));
+  try {
+    const existing = "# House rules\n\nAlways run the linter before committing.\n";
+    writeFileSync(join(dir, "AGENTS.md"), existing);
+    await runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const content = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    // Original content untouched...
+    assert.match(content, /Always run the linter before committing\./);
+    // ...and the vouch section appended after it.
+    assert.match(content, /<!-- vouch:begin -->[\s\S]*@vouchjs\/vouch[\s\S]*<!-- vouch:end -->/);
+    assert.ok(content.indexOf("House rules") < content.indexOf("vouch:begin"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("runInit: is idempotent — does not duplicate the vouch section if already present", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-init-agents-idem-"));
+  try {
+    // First init seeds the section.
+    await runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const first = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    // Remove the config so a second init runs its full path again, then re-run.
+    rmSync(join(dir, "vouch.config.mjs"), { force: true });
+    await runInit({ cwd: dir, log: () => {}, err: () => {} });
+    const second = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    assert.equal(second, first, "AGENTS.md should be unchanged on a second init");
+    // Exactly one marker pair.
+    assert.equal(second.match(/<!-- vouch:begin -->/g)?.length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("parseAddArgs: empty or flag-like reason is rejected", () => {
   assert.match(parseAddArgs(["a", "--force-with-reason", "-D"]).error ?? "", /reason/i);
 });

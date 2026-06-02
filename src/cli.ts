@@ -42,7 +42,7 @@ export function helpText(): string {
     "  vouch check                                             CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift",
     '  vouch adopt [--reason "<why>"]                          Baseline the whole repo: record every installed, unrecorded dependency',
     '  vouch acknowledge <package> --reason "<why>"            Knowingly accept a dependency\'s current advisories (CVE drift)',
-    "  vouch init                                              Bootstrap vouch.config.{js,mjs} with typed defaults (and detected packageManager)",
+    "  vouch init                                              Bootstrap vouch.config.{js,mjs} with typed defaults + seed AGENTS.md rules for coding agents",
     "  vouch --help | --version",
     "",
     "Flags:",
@@ -129,6 +129,50 @@ function configFileContent(detectedPM: PM | null, hasVouch: boolean): string {
   return [...header, ...body, ""].join("\n");
 }
 
+// Markers fence the vouch-owned region of AGENTS.md so we can append once and stay idempotent
+// on re-runs. HTML comments are invisible in rendered markdown but easy to detect in source.
+const AGENTS_BEGIN = "<!-- vouch:begin -->";
+const AGENTS_END = "<!-- vouch:end -->";
+
+/** The vouch-owned block dropped into (or appended to) AGENTS.md — the rules agents read at the
+ *  repo root. Fenced by AGENTS_BEGIN/END so a re-run can detect it and never duplicate. */
+function agentsSection(): string {
+  return [
+    AGENTS_BEGIN,
+    "## Dependency rules (vouch)",
+    "",
+    "Agents MUST NOT run `npm install <pkg>` / `pnpm add` / `yarn add` / `bun add` directly.",
+    "Instead, use vouch — it reviews, installs, and records each dependency in the ledger:",
+    "",
+    "    npx @vouchjs/vouch <package>        # or, installed: vouch <package>",
+    "    npx @vouchjs/vouch <package> -D     # dev dependency",
+    "",
+    "Before adding a dependency, explain why it's needed, why an existing dependency or a",
+    "Node.js/browser built-in can't solve it, whether it runs install-time scripts, and what",
+    "risk it introduces. Do not bypass a block with `--force-with-reason` just to silence the",
+    "gate, and do not `vouch acknowledge` a CVE on a human's behalf — surface it for PR review.",
+    AGENTS_END,
+    "",
+  ].join("\n");
+}
+
+/** Create AGENTS.md with the vouch section, or append the section to an existing file.
+ *  Idempotent: if the begin marker is already present, leaves the file untouched.
+ *  Returns "created" | "appended" | "skipped" so the caller can report accurately. */
+function ensureAgentsSection(cwd: string): "created" | "appended" | "skipped" {
+  const path = join(cwd, "AGENTS.md");
+  const section = agentsSection();
+  if (!existsSync(path)) {
+    writeFileSync(path, section);
+    return "created";
+  }
+  const current = readFileSync(path, "utf8");
+  if (current.includes(AGENTS_BEGIN)) return "skipped";
+  const sep = current.endsWith("\n\n") ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+  writeFileSync(path, current + sep + section);
+  return "appended";
+}
+
 /** Bootstraps a typed vouch.config.{js,mjs} with all defaults shown + detected packageManager.
  *  If a vouch.config.* or .safe-dep.json already exists, reports and exits without overwriting —
  *  this command never clobbers an existing config. */
@@ -161,6 +205,12 @@ export async function runInit(opts: InitOptions): Promise<number> {
   }
   if (detectedPM) opts.log(`  Detected packageManager: "${detectedPM}"`);
   else opts.log(`  No PM signal detected; packageManager left as "auto" (falls back to npm).`);
+
+  // Drop the agent dependency rules at the repo root so coding agents read them. Append-safe:
+  // creates AGENTS.md if absent, appends a fenced section if present, no-ops if already there.
+  const agents = ensureAgentsSection(opts.cwd);
+  if (agents === "created") opts.log(`  Wrote AGENTS.md with the vouch dependency rules for coding agents.`);
+  else if (agents === "appended") opts.log(`  Appended a vouch dependency-rules section to your existing AGENTS.md.`);
 
   // Workspace-aware nudge: count distinct unrecorded name@installed across all workspaces.
   try {
