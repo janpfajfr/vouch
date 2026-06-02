@@ -1,11 +1,9 @@
 node_modules/
 dist/
 .DS_Store
-you-shall-not-add-v2-ideas.md
 
-# Private planning — not for the public repo
-LAUNCH-STRATEGY.md
-INTEGRATION-RESEARCH.md
+# Private planning — not for the public repo (drafts, strategy, specs, decisions)
+.private/
 
 # Claude Code / agent session dumps — never commit these
 *-local-command-caveat*.txt
