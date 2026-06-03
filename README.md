@@ -6,9 +6,32 @@ A **dependency-decision ledger** for Node.js projects and coding agents.
 
 > It doesn't prevent the bypass. It makes the bypass **impossible to hide.**
 
-`vouch` doesn't decide whether a dependency is safe. It makes sure every dependency that
-enters your repo was **recorded, explained, and reviewable in the pull request** — a memory
-and conscience for your `package.json`.
+**What it is.** `vouch` doesn't decide whether a dependency is safe. It makes sure every
+dependency that enters your repo was **recorded, explained, and reviewable in the pull
+request** — a memory and conscience for your `package.json`. The record lives in a committed
+ledger, keyed by `name@version`, visible in the diff and auditable forever.
+
+**Why use it**
+
+- **Every dependency is a recorded decision** — who added it and why, in a committed ledger
+  that shows up in the PR diff instead of a lockfile change nobody reads.
+- **CI blocks the silent add** — a raw `npm install <pkg>` (by a human *or* an agent) can no
+  longer reach `main` unrecorded.
+- **The record stays honest over time** — surfaces a **known CVE** or **version drift** on
+  something you already recorded, until a human re-decides.
+- **Zero dependencies, Node 18+** — a dependency-security tool with none of its own, and it
+  ships an `AGENTS.md` so coding agents play by the same rules.
+
+**What it is *not***
+
+- **Not a scanner.** Deep per-package analysis (typosquatting, behavioral) is the job of `npq`
+  and Socket. `vouch` owns **provenance and enforcement**, and flags drift after the fact.
+- **Not a replacement for your package manager's install gates.** It *complements* pnpm's
+  `minimumReleaseAge`, Yarn's age gate, and npm's release-age controls.
+- **Not an approval authority.** `vouch` *records* the decision; the *PR review* approves it.
+
+(Each of these is expanded below — see [What it is *not*](#what-it-is-not) and
+[vouch records; the PR review approves](#vouch-records-the-pr-review-approves).)
 
 ![vouch demo](https://raw.githubusercontent.com/janpfajfr/vouch/main/assets/demo.gif)
 
@@ -16,17 +39,79 @@ and conscience for your `package.json`.
 
 ## Contents
 
+- [Quick start](#quick-start)
 - [The idea](#the-idea)
 - [What you'll see](#what-youll-see)
-- [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [vouch records; the PR review approves](#vouch-records-the-pr-review-approves)
 - [When `check` blocks on a CVE](#when-check-blocks-on-a-cve)
 - [Commands](#commands)
 - [Using vouch in a monorepo](#using-vouch-in-a-monorepo)
-- [Configuration](#configuration-safe-depjson)
+- [Configuration](#configuration)
 - [For coding agents](#for-coding-agents)
 - [What it is *not*](#what-it-is-not)
+- [Zero dependencies](#zero-dependencies)
+
+---
+
+## Quick start
+
+**Requirements:** Node.js 18+. No other dependencies.
+
+**Install** — run on demand with `npx`, or install the CLI globally:
+
+```bash
+npx @vouchjs/vouch --help     # no install
+npm install -g @vouchjs/vouch # or install the `vouch` command
+```
+
+**Bootstrap the config (optional, recommended)** — one command, never overwrites:
+
+```bash
+vouch init                # writes vouch.config.{mjs,js} with all defaults shown
+```
+
+That gives you a **typed config** (Playwright-style): every option visible with its default,
+ready to be edited. Delete the keys you're happy with and vouch will pick up future defaults;
+change the ones you're not. `init` also seeds an `AGENTS.md` with the rules for coding agents.
+
+For full editor **autocomplete + type errors** on the generated config, also install vouch as
+a dev dependency so its types are reachable from your project:
+
+```bash
+npm install -D @vouchjs/vouch
+```
+
+`vouch init` detects whether vouch is in your `node_modules` and writes the appropriate
+variant — `import { defineConfig } from "@vouchjs/vouch"` when installed, a JSDoc-typed plain export
+when not. Either variant **loads at runtime**; only the editor experience differs.
+
+**Add a dependency** — instead of `npm install` / `pnpm add`, run:
+
+```bash
+vouch some-package        # reviews, installs, and records the decision
+vouch some-package -D     # devDependency
+```
+
+**Gate it in CI** — add one step that fails the build on any unrecorded dependency. Drop this
+in `.github/workflows/vouch.yml` (also in [`examples/github-actions-check.yml`](examples/github-actions-check.yml)):
+
+```yaml
+name: vouch
+on: [pull_request]
+jobs:
+  vouch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npx @vouchjs/vouch check
+```
+
+That's it. A raw `npm install <pkg>` (by a human *or* an agent) can no longer reach `main`
+unrecorded. A fresh clone is unaffected — `npm install` / `npm ci` restores the lockfile as
+usual, and `check` passes because the committed ledger already covers every dependency.
 
 ---
 
@@ -77,67 +162,6 @@ Once recorded, the ledger entry travels with the diff and CI is green:
 
   All dependencies are recorded.
 ```
-
----
-
-## Quick start
-
-**Requirements:** Node.js 18+. No other dependencies.
-
-**Install** — run on demand with `npx`, or install the CLI globally:
-
-```bash
-npx @vouchjs/vouch --help     # no install
-npm install -g @vouchjs/vouch # or install the `vouch` command
-```
-
-**Bootstrap the config (optional, recommended)** — one command, never overwrites:
-
-```bash
-vouch init                # writes vouch.config.{mjs,js} with all defaults shown
-```
-
-That gives you a **typed config** (Playwright-style): every option visible with its default,
-ready to be edited. Delete the keys you're happy with and vouch will pick up future defaults;
-change the ones you're not.
-
-For full editor **autocomplete + type errors** on the generated config, also install vouch as
-a dev dependency so its types are reachable from your project:
-
-```bash
-npm install -D @vouchjs/vouch
-```
-
-`vouch init` detects whether vouch is in your `node_modules` and writes the appropriate
-variant — `import { defineConfig } from "@vouchjs/vouch"` when installed, a JSDoc-typed plain export
-when not. Either variant **loads at runtime**; only the editor experience differs.
-
-**Add a dependency** — instead of `npm install` / `pnpm add`, run:
-
-```bash
-vouch some-package        # reviews, installs, and records the decision
-vouch some-package -D     # devDependency
-```
-
-**Gate it in CI** — add one step that fails the build on any unrecorded dependency. Drop this
-in `.github/workflows/vouch.yml` (also in [`examples/github-actions-check.yml`](examples/github-actions-check.yml)):
-
-```yaml
-name: vouch
-on: [pull_request]
-jobs:
-  vouch:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npx @vouchjs/vouch check
-```
-
-That's it. A raw `npm install <pkg>` (by a human *or* an agent) can no longer reach `main`
-unrecorded. A fresh clone is unaffected — `npm install` / `npm ci` restores the lockfile as
-usual, and `check` passes because the committed ledger already covers every dependency.
 
 ---
 
@@ -219,7 +243,7 @@ build), and only the specific dependency that drifted — never your whole proje
 | `vouch check` | CI gate: fail on unrecorded deps, unexplained high-risk, CVE drift, or version drift. |
 | `vouch adopt` | Baseline the whole repo: records every installed, unrecorded dependency across all workspaces (deduped by `name@version`). Never installs. Idempotent. |
 | `vouch acknowledge <pkg> --reason "<why>"` | Knowingly accept a dependency's current advisories (CVE drift). |
-| `vouch init` | Bootstrap `vouch.config.{mjs,js}` with all defaults shown + detected `packageManager`. Refuses to overwrite. |
+| `vouch init` | Bootstrap `vouch.config.{mjs,js}` with all defaults shown + detected `packageManager`, and seed `AGENTS.md`. Refuses to overwrite. |
 | `vouch --help` · `vouch --version` | Help (with the wordmark) and version. |
 
 Environment: `VOUCH_ADVISORY_URL` overrides the npm advisory endpoint (for enterprise mirrors/proxies).
@@ -313,8 +337,9 @@ point at [`schema.json`](schema.json) in the repo. New projects should prefer
 
 `AGENTS.md` tells agents to use `vouch` instead of raw installs, to explain *why* a dependency
 is needed before adding it, and — crucially — **not** to silence the gate on a human's behalf.
-As agents add more dependencies, the ledger becomes the place a human reviews those decisions,
-asynchronously and accountably.
+`vouch init` seeds this file (creating it, or appending a fenced section to an existing one),
+so the rules travel with the repo. As agents add more dependencies, the ledger becomes the
+place a human reviews those decisions, asynchronously and accountably.
 
 ---
 
@@ -330,6 +355,8 @@ install-time gates — pnpm's `minimumReleaseAge` (default on in pnpm 11), Yarn'
 installs; `vouch` records *who decided, and why*, where the PR can see it — the one thing none of
 them do. On package-manager versions without those defaults (e.g. pnpm 9), `vouch`'s install-time
 review is the gate you'd otherwise lack.
+
+---
 
 ## Zero dependencies
 
