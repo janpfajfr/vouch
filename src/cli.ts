@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, isAllowlisted } from "./config.js";
 import { readLedger, writeLedger, upsertEntry, LEDGER_RELATIVE, type LedgerEntry, type Risk } from "./ledger.js";
-import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
+import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, checkProvenance, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import { detectPM, detectPMFromSignals, installArgs, cooldownConfigured, type PM } from "./pm.js";
 import { createNpmRegistryClient, PackageNotFoundError, RegistryUnavailableError, type RegistryClient } from "./registry.js";
 import { runCheckWorkspaces, type CheckViolation } from "./check-command.js";
 import { createVersionResolver, type VersionResolver } from "./installed.js";
 import { splitNameVersion, ledgerKey } from "./spec.js";
 import { createNpmAdvisoryClient, type AdvisoryClient, type Advisory } from "./advisories.js";
+import { createNpmProvenanceClient, resolveProvenance, describeProvenance, type ProvenanceClient } from "./provenance.js";
 import { gitIdentity } from "./identity.js";
 import { wordmark, shouldShowWordmark, statusHeader, type OutputOpts } from "./art.js";
 import { findRepoRoot, discoverWorkspaces, type WorkspacePackage } from "./workspaces.js";
@@ -262,6 +263,7 @@ export interface SafeAddOptions {
   registry: RegistryClient;
   installer: Installer;
   advisoryClient?: AdvisoryClient;
+  provenanceClient?: ProvenanceClient;
   identity?: () => string | null;
   now: () => Date;
   cwd: string;
@@ -288,8 +290,14 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   const o = outputOpts();
   const notes: string[] = [];
 
+  // Provenance evidence — presence from the packument (free), claim from the attestation
+  // bundle (one fetch, fail-open). Recorded always; the gate only sees the packument-
+  // confirmed fact, so an offline bundle fetch can never block.
+  const provenance = await resolveProvenance(meta.attestationsUrl, opts.provenanceClient);
+
   const blocking: string[] = [];
   const findings: Finding[] = [];
+  let pf: Finding | null = null;
   if (isAllowlisted(name, cfg.allowScopedPackages)) {
     notes.push(`"${name}" matches allowScopedPackages; risk gate skipped.`);
   } else {
@@ -298,6 +306,8 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
       checkInstallScripts(meta.scripts, cfg),
       checkDeprecated(meta.deprecated),
     );
+    pf = checkProvenance(provenance.attested, cfg);
+    if (pf) findings.push(pf);
   }
 
   // Advisory finding — fed into the same findings list so it shapes risk + routing. Evaluated
@@ -318,6 +328,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
     if (f.level === "block") blocking.push(f.message);
     else if (f.level === "warn") notes.push(f.message);
   }
+  if (!pf || pf.level === "ok") notes.push(describeProvenance(provenance));
   const risk: Risk = overallRisk(findings);
 
   if (blocking.length > 0 && !opts.force) {
@@ -345,7 +356,7 @@ export async function runSafeAdd(opts: SafeAddOptions): Promise<number> {
   if (code !== 0) { opts.err(`Install failed (exit ${code}); ledger not written.`); return code; }
 
   const installScripts = (() => { const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter(k => meta.scripts[k]).map(k => [k, meta.scripts[k]])); return Object.keys(s).length > 0 ? s : false as const; })();
-  const checks: LedgerEntry["checks"] = { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts };
+  const checks: LedgerEntry["checks"] = { ageHours: ageHours(meta.publishedAt, opts.now()), installScripts, provenance };
   if (recordedAdvisories !== undefined) checks.advisories = recordedAdvisories;
   const entry: LedgerEntry = {
     name,
@@ -556,6 +567,7 @@ async function main(argv: string[]): Promise<number> {
     registry: createNpmRegistryClient(),
     installer: realInstaller(),
     advisoryClient: createNpmAdvisoryClient(),
+    provenanceClient: createNpmProvenanceClient(),
     identity: () => gitIdentity(),
     now: () => new Date(),
     cwd, ledgerDir: repoRoot,

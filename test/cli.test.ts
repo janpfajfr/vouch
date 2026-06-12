@@ -7,6 +7,7 @@ import { runSafeAdd, parseSpec, runAcknowledge, helpText, parseAddArgs, runInit 
 import type { AdvisoryClient, Advisory } from "../src/advisories.js";
 import { readLedger } from "../src/ledger.js";
 import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } from "../src/registry.js";
+import type { ProvenanceClient } from "../src/provenance.js";
 
 function fakeRegistry(meta: Partial<PackageMetadata>): RegistryClient {
   return {
@@ -23,6 +24,10 @@ function setup() {
 }
 
 const noIdentity = () => null;
+
+const claimClient: ProvenanceClient = {
+  async fetch() { return { attested: true, sourceRepo: "https://github.com/sigstore/sigstore-js", sourceCommit: "7d2900eca1c22b3f87c13987c8d4b7c9a29b733a", workflow: ".github/workflows/release.yml@refs/heads/main" }; },
+};
 
 test("registry unavailable fails closed: no install, no ledger, exit 1", async () => {
   const dir = setup();
@@ -573,4 +578,105 @@ test("runSafeAdd writes to the injected ledgerDir (root), not cwd", async () => 
     const file = JSON.parse(readFileSync(join(root, ".security", "dependency-approvals.json"), "utf8"));
     assert.ok(file.entries["lodash@4.17.21"]);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("records {attested:false} provenance and notes it when the version has no attestation", async () => {
+  const dir = setup();
+  try {
+    const logs: string[] = [];
+    const code = await runSafeAdd({
+      spec: "lodash", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      identity: noIdentity,
+      now: () => new Date("2026-06-12"), cwd: dir, log: (s) => logs.push(s), err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(readLedger(dir)["lodash@1.0.0"].checks.provenance, { attested: false });
+    assert.ok(logs.some((s) => /no provenance attestation/.test(s)));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("records the parsed claim and notes the source repo when attested", async () => {
+  const dir = setup();
+  try {
+    const logs: string[] = [];
+    const code = await runSafeAdd({
+      spec: "sigstore", dev: false, force: null,
+      registry: fakeRegistry({ attestationsUrl: "https://registry.npmjs.org/-/npm/v1/attestations/sigstore@1.0.0" }),
+      installer: { async install() { return 0; } },
+      provenanceClient: claimClient,
+      identity: noIdentity,
+      now: () => new Date("2026-06-12"), cwd: dir, log: (s) => logs.push(s), err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.equal(readLedger(dir)["sigstore@1.0.0"].checks.provenance?.sourceRepo, "https://github.com/sigstore/sigstore-js");
+    assert.ok(logs.some((s) => /built from github\.com\/sigstore\/sigstore-js@7d2900e/.test(s)));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("requireProvenance=block: unattested version blocks (no install, no ledger); --force-with-reason overrides", async () => {
+  const dir = setup();
+  writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ requireProvenance: "block" }));
+  try {
+    let installed = false;
+    const blocked = await runSafeAdd({
+      spec: "lodash", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { installed = true; return 0; } },
+      identity: noIdentity,
+      now: () => new Date("2026-06-12"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(blocked, 1);
+    assert.equal(installed, false);
+    assert.deepEqual(readLedger(dir), {});
+
+    const forced = await runSafeAdd({
+      spec: "lodash", dev: false, force: "internal mirror has no provenance yet",
+      registry: fakeRegistry({}),
+      installer: { async install() { installed = true; return 0; } },
+      identity: noIdentity,
+      now: () => new Date("2026-06-12"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(forced, 0);
+    assert.equal(installed, true);
+    const e = readLedger(dir)["lodash@1.0.0"];
+    assert.equal(e.reason, "internal mirror has no provenance yet");
+    assert.equal(e.risk, "high");
+    assert.deepEqual(e.checks.provenance, { attested: false });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("requireProvenance=block fails open on bundle-fetch failure: packument says attested, client offline → no block", async () => {
+  const dir = setup();
+  writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ requireProvenance: "block" }));
+  try {
+    const code = await runSafeAdd({
+      spec: "sigstore", dev: false, force: null,
+      registry: fakeRegistry({ attestationsUrl: "https://reg/att" }),
+      installer: { async install() { return 0; } },
+      provenanceClient: { async fetch() { return null; } },
+      identity: noIdentity,
+      now: () => new Date("2026-06-12"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(readLedger(dir)["sigstore@1.0.0"].checks.provenance, { attested: true });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("allowlisted package skips the provenance gate but still records the evidence", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ysna-"));
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "host", dependencies: {} }));
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ allowScopedPackages: ["@acme/*"], requireProvenance: "block" }));
+    const code = await runSafeAdd({
+      spec: "@acme/widget", dev: false, force: null,
+      registry: fakeRegistry({}),
+      installer: { async install() { return 0; } },
+      identity: noIdentity,
+      now: () => new Date("2026-06-12"), cwd: dir, log: () => {}, err: () => {},
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(readLedger(dir)["@acme/widget@1.0.0"].checks.provenance, { attested: false });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
