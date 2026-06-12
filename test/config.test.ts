@@ -148,3 +148,14 @@ test("typed config: enum validation still fires (typo'd values fail)", async () 
     await assert.rejects(loadConfig(dir), /versionDrift.*one of/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("requireProvenance defaults to off and validates its enum", async () => {
+  assert.equal(DEFAULT_CONFIG.requireProvenance, "off");
+  const dir = mkdtempSync(join(tmpdir(), "ysna-cfg-"));
+  try {
+    writeFileSync(join(dir, ".safe-dep.json"), JSON.stringify({ requireProvenance: "definitely" }));
+    await assert.rejects(() => loadConfig(dir), /requireProvenance/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
