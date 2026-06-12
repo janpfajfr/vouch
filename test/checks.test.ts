@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, overallRisk, DANGEROUS_SCRIPTS } from "../src/checks.js";
+import { checkVersionAge, checkInstallScripts, checkDeprecated, checkKnownCve, checkProvenance, overallRisk, DANGEROUS_SCRIPTS } from "../src/checks.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 
 const now = new Date("2026-05-23T00:00:00Z");
@@ -77,6 +77,21 @@ test("DANGEROUS_SCRIPTS lists the six lifecycle hooks", () => {
   assert.deepEqual([...DANGEROUS_SCRIPTS].sort(), [
     "install", "postinstall", "preinstall", "prepare", "prepublish", "prepublishOnly",
   ].sort());
+});
+
+test("checkProvenance: off → null regardless of attestation", () => {
+  assert.equal(checkProvenance(true, DEFAULT_CONFIG), null);
+  assert.equal(checkProvenance(false, DEFAULT_CONFIG), null);
+});
+
+test("checkProvenance: warn/block when unattested, ok when attested", () => {
+  const warnCfg = { ...DEFAULT_CONFIG, requireProvenance: "warn" as const };
+  const blockCfg = { ...DEFAULT_CONFIG, requireProvenance: "block" as const };
+  assert.equal(checkProvenance(false, warnCfg)?.level, "warn");
+  assert.equal(checkProvenance(false, blockCfg)?.level, "block");
+  assert.match(checkProvenance(false, blockCfg)!.message, /provenance/);
+  assert.equal(checkProvenance(true, warnCfg)?.level, "ok");
+  assert.equal(checkProvenance(true, blockCfg)?.level, "ok");
 });
 
 test("overallRisk: block->high, warn->medium, none->low", () => {
