@@ -102,6 +102,9 @@ function settingsBlock(pm: PM | "auto"): string[] {
     "  // CVE handling at add time",
     `  cveAtInstall: "warn",            // "warn" | "block" | "off"`,
     `  cveAtInstallMinSeverity: "high", // "low" | "moderate" | "high" | "critical"`,
+    "",
+    "  // Provenance at add time — always recorded in the ledger; this only controls the gate",
+    `  requireProvenance: "off",        // "warn" | "block" | "off"`,
   ];
 }
 

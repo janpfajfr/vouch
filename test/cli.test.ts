@@ -391,7 +391,7 @@ test("runInit: writes a JSDoc-typed plain export when vouch isn't installed loca
     assert.match(content, /@type \{import\("@vouchjs\/vouch"\)\.Config\}/);
     assert.match(content, /export default \{/);
     // Every Config key visible, with its default literal value
-    for (const key of ["packageManager", "allowScopedPackages", "minimumVersionAgeHours", "warnVersionAgeHours", "blockInstallScripts", "requireCooldownConfigured", "requirePinned", "cveAtInstall", "cveAtInstallMinSeverity"]) {
+    for (const key of ["packageManager", "allowScopedPackages", "minimumVersionAgeHours", "warnVersionAgeHours", "blockInstallScripts", "requireCooldownConfigured", "requirePinned", "cveAtInstall", "cveAtInstallMinSeverity", "requireProvenance"]) {
       assert.match(content, new RegExp(`\\b${key}:`), `expected ${key} in the generated config`);
     }
     assert.match(content, /packageManager: "auto"/);
