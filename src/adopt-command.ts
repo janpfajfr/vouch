@@ -8,11 +8,13 @@ import type { WorkspacePackage } from "./workspaces.js";
 import { checkVersionAge, checkInstallScripts, checkDeprecated, overallRisk, ageHours, DANGEROUS_SCRIPTS, type Finding } from "./checks.js";
 import type { RegistryClient } from "./registry.js";
 import type { AdvisoryClient, Advisory as AdvisoryRef } from "./advisories.js";
+import { resolveProvenance, type ProvenanceClient } from "./provenance.js";
 
 export interface AdoptOptions {
   reason: string;
   registry: RegistryClient;
   advisoryClient?: AdvisoryClient;
+  provenanceClient?: ProvenanceClient;
   identity: () => string | null;
   now: () => Date;
   repoRoot: string;
@@ -103,7 +105,10 @@ export async function runAdopt(opts: AdoptOptions): Promise<number> {
       const s = Object.fromEntries(DANGEROUS_SCRIPTS.filter((k) => meta.scripts[k]).map((k) => [k, meta.scripts[k]]));
       return Object.keys(s).length > 0 ? s : false as const;
     })();
-    const checks: LedgerEntry["checks"] = { ageHours: ageHours(meta.publishedAt, now), installScripts };
+    // Evidence only — never a finding here. Adopt baselines the past; the
+    // requireProvenance gate judges new adds, not history.
+    const provenance = await resolveProvenance(meta.attestationsUrl, opts.provenanceClient);
+    const checks: LedgerEntry["checks"] = { ageHours: ageHours(meta.publishedAt, now), installScripts, provenance };
     if (liveByName !== null) checks.advisories = liveByName[c.name] ?? [];
     const entry: LedgerEntry = {
       name: c.name, version: c.version, addedAt: now.toISOString(), risk,

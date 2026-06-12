@@ -548,6 +548,7 @@ async function main(argv: string[]): Promise<number> {
     if (workspaces.length === 0) { readPackageJson(repoRoot); }
     return runAdopt({
       reason, registry: createNpmRegistryClient(), advisoryClient: createNpmAdvisoryClient(),
+      provenanceClient: createNpmProvenanceClient(),
       identity: () => gitIdentity(), now: () => new Date(), repoRoot, cfg, workspaces,
       resolver: createVersionResolver(repoRoot), log: (s) => console.log(s), err: (s) => console.error(s),
     });
