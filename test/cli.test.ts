@@ -11,7 +11,7 @@ import { RegistryUnavailableError, type RegistryClient, type PackageMetadata } f
 function fakeRegistry(meta: Partial<PackageMetadata>): RegistryClient {
   return {
     async fetchMetadata(name) {
-      return { name, version: "1.0.0", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false, ...meta };
+      return { name, version: "1.0.0", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false, attestationsUrl: null, ...meta };
     },
   };
 }
@@ -497,7 +497,7 @@ test("parseAddArgs: empty or flag-like reason is rejected", () => {
 // Model C — keyed ledger (name@version) tests
 
 const regV2 = (version: string): RegistryClient => ({
-  async fetchMetadata(name) { return { name, version, publishedAt: new Date("2020-01-01T00:00:00Z"), scripts: {}, deprecated: false }; },
+  async fetchMetadata(name) { return { name, version, publishedAt: new Date("2020-01-01T00:00:00Z"), scripts: {}, deprecated: false, attestationsUrl: null }; },
 });
 const noInstallV2 = { async install() { return 0; } };
 
@@ -548,7 +548,7 @@ test("runSafeAdd records checks.advisories from the install-time advisory fetch"
     const advisoryClient = { async fetchBulk() { return { lodash: [{ id: "GHSA-x", severity: "moderate" as const }] }; } };
     await runSafeAdd({
       spec: "lodash@4.17.21", dev: false, force: null,
-      registry: { async fetchMetadata(name) { return { name, version: "4.17.21", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false }; } },
+      registry: { async fetchMetadata(name) { return { name, version: "4.17.21", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false, attestationsUrl: null }; } },
       installer: { async install() { return 0; } },
       advisoryClient,
       identity: noIdentity,

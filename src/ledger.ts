@@ -18,6 +18,17 @@ export interface CveSnapshot {
   reason: string;                       // why the risk was knowingly accepted
 }
 
+/** Provenance posture recorded at decision time. Field omitted on an entry = recorded
+ *  before vouch tracked provenance (same "no baseline" semantics as checks.advisories).
+ *  attested:true with no claim fields = attestation exists (packument fact) but the
+ *  bundle fetch failed or didn't parse — presence is still trustworthy. */
+export interface ProvenanceRecord {
+  attested: boolean;
+  sourceRepo?: string;   // e.g. "https://github.com/sigstore/sigstore-js"
+  sourceCommit?: string; // full git SHA from the SLSA predicate
+  workflow?: string;     // e.g. ".github/workflows/release.yml@refs/heads/main"
+}
+
 export interface LedgerEntry {
   name: string;          // denormalized from the key — entry is self-describing
   version: string;       // was approvedVersion; the key already says "approved"
@@ -25,7 +36,7 @@ export interface LedgerEntry {
   risk: Risk;
   reason: string | null;
   addedBy: string | null;
-  checks: { ageHours: number | null; installScripts: Record<string, string> | false; advisories?: AcknowledgedAdvisory[] };
+  checks: { ageHours: number | null; installScripts: Record<string, string> | false; advisories?: AcknowledgedAdvisory[]; provenance?: ProvenanceRecord };
   cve?: CveSnapshot;
 }
 
