@@ -169,7 +169,11 @@ Once recorded, the ledger entry travels with the diff and CI is green:
 
 **When you add a package** (`vouch <pkg>`):
 
-1. Reviews it: **version age** and **install-time scripts** (blocked by default).
+1. Reviews it: **version age**, **install-time scripts** (blocked by default), and
+   **provenance** — whether the version was published with an
+   [npm provenance attestation](https://docs.npmjs.com/generating-provenance-statements),
+   and from which repo/workflow it was built. Recorded in the ledger entry; opt-in gate
+   via `requireProvenance`.
 2. Warns you **right then** if the version already has a **known CVE** — so `check` is never
    the first messenger. Configurable: `cveAtInstall: "warn"` (default), `"block"` (refuse to
    install advisories at or above `cveAtInstallMinSeverity`, default `"high"`), or `"off"`.
@@ -289,6 +293,9 @@ export default defineConfig({
   // CVE handling at add time
   cveAtInstall: "warn",              // "warn" | "block" | "off"
   cveAtInstallMinSeverity: "high",   // "low" | "moderate" | "high" | "critical"
+
+  // Provenance at add time — always recorded; this only controls the gate
+  requireProvenance: "off",          // "warn" | "block" | "off"
 });
 ```
 
@@ -348,6 +355,9 @@ place a human reviews those decisions, asynchronously and accountably.
 Not a scanner. Deep per-package analysis (typosquatting, behavioral) is the job of tools like
 `npq` and Socket. We don't *scan* for CVEs to discover them — we record the advisory posture of
 what you recorded and flag **drift** after the fact. `vouch` owns **provenance and enforcement**.
+Provenance is recorded the same way: vouch records the registry-verified attestation claim
+from publish time (which repo and workflow built the version); it does **not** re-verify
+sigstore signatures — `npm audit signatures` is the tool for cryptographic re-verification.
 
 Not a replacement for your package manager's native defenses, either. Modern versions ship
 install-time gates — pnpm's `minimumReleaseAge` (default on in pnpm 11), Yarn's
