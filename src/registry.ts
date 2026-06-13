@@ -4,6 +4,8 @@ export interface PackageMetadata {
   publishedAt: Date | null;
   scripts: Record<string, string>;
   deprecated: boolean;
+  /** URL of the npm provenance attestation bundle, when published with --provenance. */
+  attestationsUrl: string | null;
 }
 
 export interface RegistryClient {
@@ -17,6 +19,7 @@ export class RegistryUnavailableError extends Error {}
 interface RawVersion {
   scripts?: Record<string, string>;
   deprecated?: boolean | string; // npm sets this to a message string when deprecated
+  dist?: { attestations?: { url?: string } };
 }
 
 interface RawDoc {
@@ -37,6 +40,7 @@ export function normalizeMetadata(name: string, versionSpec: string | undefined,
     publishedAt: timeStr ? new Date(timeStr) : null,
     scripts: v.scripts ?? {},
     deprecated: Boolean(v.deprecated),
+    attestationsUrl: typeof v.dist?.attestations?.url === "string" ? v.dist.attestations.url : null,
   };
 }
 

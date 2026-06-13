@@ -40,6 +40,9 @@ gate.
   stalled endpoint warns, never fails. Clear it by fixing, removing, or `vouch acknowledge`.
 - **Tamper-evidence.** Every decision is a committed JSON entry in the PR diff — auditable
   forever, hard to change without it showing up in history.
+- **Unattested publishes (opt-in).** Every entry records whether the version carried an npm
+  provenance attestation and what repo/workflow it claims to be built from — evidence for the
+  reviewer. With `requireProvenance: "block"`, an unattested version can't be added silently.
 
 ## What `vouch` does NOT defend (by design)
 
@@ -50,6 +53,9 @@ gate.
 - **Per-package vulnerability discovery.** `vouch` records the advisory posture of what you
   recorded and flags drift; it does not *scan* to discover typosquatting or malware. That is
   the job of `npq` / Socket.
+- **Signature re-verification.** vouch records the registry-verified provenance claim from
+  publish time; it does not re-verify sigstore signatures or detect a compromised registry.
+  `npm audit signatures` re-verifies cryptographically.
 - **Transitive install-time scripts.** The install-script gate inspects only the package you
   add directly, not its dependency tree. A transitive dependency's `postinstall` is out of
   scope — pair `vouch` with a package-manager release-age cooldown and, if you need it,

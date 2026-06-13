@@ -38,3 +38,23 @@ test("missing time yields null publishedAt", () => {
   const m = normalizeMetadata("lodash", undefined, noTime);
   assert.equal(m.publishedAt, null);
 });
+
+test("extracts attestationsUrl when dist.attestations is present", () => {
+  const attested = {
+    "dist-tags": { latest: "5.0.0" },
+    versions: {
+      "5.0.0": {
+        scripts: {},
+        dist: { attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/sigstore@5.0.0", provenance: { predicateType: "https://slsa.dev/provenance/v1" } } },
+      },
+    },
+    time: { "5.0.0": "2026-01-01T00:00:00.000Z" },
+  };
+  const m = normalizeMetadata("sigstore", undefined, attested);
+  assert.equal(m.attestationsUrl, "https://registry.npmjs.org/-/npm/v1/attestations/sigstore@5.0.0");
+});
+
+test("attestationsUrl is null when dist has no attestations (or no dist at all)", () => {
+  const m = normalizeMetadata("lodash", undefined, fixture);
+  assert.equal(m.attestationsUrl, null);
+});

@@ -53,6 +53,15 @@ export function checkKnownCve(pkg: string, found: Advisory[], cfg: Config): Find
   return { level: "warn", message: `known ${noun}: ${list} — \`check\` will block until acknowledged: vouch acknowledge ${pkg} --reason "<why>".` };
 }
 
+/** Gate on the packument-confirmed attestation fact. "off" → null (no finding, risk
+ *  unaffected — mirrors cveAtInstall "off" skipping the advisory finding entirely). */
+export function checkProvenance(attested: boolean, cfg: Config): Finding | null {
+  if (cfg.requireProvenance === "off") return null;
+  if (attested) return { level: "ok", message: "npm provenance attestation found." };
+  const level: Severity = cfg.requireProvenance === "block" ? "block" : "warn";
+  return { level, message: "no provenance attestation — version was not published with npm provenance." };
+}
+
 export function overallRisk(findings: Finding[]): Risk {
   if (findings.some((f) => f.level === "block")) return "high";
   if (findings.some((f) => f.level === "warn")) return "medium";

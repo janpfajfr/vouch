@@ -35,6 +35,10 @@ export interface Config {
   cveAtInstall: CheckMode;
   /** Minimum severity that blocks when cveAtInstall is "block". Lower severities still warn. */
   cveAtInstallMinSeverity: Severity;
+  /** What `vouch <pkg>` does when a version lacks an npm provenance attestation.
+   *  Provenance is always recorded in the ledger; this only controls the gate.
+   *  "off" (default): record only; "warn": note; "block": refuse without --force-with-reason. */
+  requireProvenance: CheckMode;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -48,6 +52,7 @@ export const DEFAULT_CONFIG: Config = {
   checkPeerDependencies: false,
   cveAtInstall: "warn",
   cveAtInstallMinSeverity: "high",
+  requireProvenance: "off",
 };
 
 /** File names tried in order. The first one that exists wins; .safe-dep.json is the
@@ -109,6 +114,7 @@ function mergeAndValidate(parsed: Partial<Config>, source: string): Config {
   checkEnum(source, "requirePinned", cfg.requirePinned, PIN_MODES);
   checkEnum(source, "cveAtInstall", cfg.cveAtInstall, CHECK_MODES);
   checkEnum(source, "cveAtInstallMinSeverity", cfg.cveAtInstallMinSeverity, SEVERITY_RANK);
+  checkEnum(source, "requireProvenance", cfg.requireProvenance, CHECK_MODES);
   checkEnum(source, "packageManager", cfg.packageManager, PACKAGE_MANAGERS);
   return cfg;
 }

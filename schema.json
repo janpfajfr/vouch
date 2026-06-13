@@ -73,6 +73,12 @@
       "enum": ["low", "moderate", "high", "critical"],
       "default": "high",
       "description": "Minimum advisory severity that blocks when cveAtInstall is 'block'. Lower severities still warn."
+    },
+    "requireProvenance": {
+      "type": "string",
+      "enum": ["warn", "block", "off"],
+      "default": "off",
+      "description": "What `vouch <pkg>` does when a version lacks an npm provenance attestation. Provenance is always recorded in the ledger; 'warn' adds a note, 'block' refuses to install without --force-with-reason, 'off' records only. Fail-open: only confirmed absence in the registry document can warn or block."
     }
   }
 }

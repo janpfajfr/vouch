@@ -11,6 +11,7 @@ import type { WorkspacePackage } from "../src/workspaces.js";
 import type { VersionResolver } from "../src/installed.js";
 import type { RegistryClient, PackageMetadata } from "../src/registry.js";
 import type { AdvisoryClient } from "../src/advisories.js";
+import type { ProvenanceClient } from "../src/provenance.js";
 
 const ws = (relPath: string, pkg: object): WorkspacePackage => ({ dir: `/r/${relPath === "." ? "" : relPath}`, relPath, name: null, pkg });
 
@@ -23,7 +24,7 @@ const wsResolver = (map: Record<string, Record<string, string>>): VersionResolve
 });
 
 const reg = (over: (name: string, v: string) => Partial<PackageMetadata> = () => ({})): RegistryClient => ({
-  async fetchMetadata(name, v) { return { name, version: v ?? "0.0.0", publishedAt: new Date("2020-01-01T00:00:00Z"), scripts: {}, deprecated: false, ...over(name, v ?? "0.0.0") }; },
+  async fetchMetadata(name, v) { return { name, version: v ?? "0.0.0", publishedAt: new Date("2020-01-01T00:00:00Z"), scripts: {}, deprecated: false, attestationsUrl: null, ...over(name, v ?? "0.0.0") }; },
 });
 
 function tmp() { return mkdtempSync(join(tmpdir(), "ysna-")); }
@@ -94,7 +95,7 @@ test("never writes a cve field even when advisories exist", async () => {
 test("registry error on one candidate skips only it; others recorded", async () => {
   const dir = tmp();
   try {
-    const registry: RegistryClient = { async fetchMetadata(name, v) { if (name === "bad") throw new Error("boom"); return { name, version: v ?? "0.0.0", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false }; } };
+    const registry: RegistryClient = { async fetchMetadata(name, v) { if (name === "bad") throw new Error("boom"); return { name, version: v ?? "0.0.0", publishedAt: new Date("2020-01-01"), scripts: {}, deprecated: false, attestationsUrl: null }; } };
     await adopt(dir, [ws("apps/elis", { dependencies: { lodash: "^4", bad: "^1" } })], wsResolver({ "apps/elis": { lodash: "4.17.21", bad: "1.0.0" } }), { registry });
     assert.deepEqual(Object.keys(readLedger(dir)), ["lodash@4.17.21"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -134,6 +135,40 @@ test("records an empty advisories baseline when the feed reports none", async ()
     const advisoryClient: AdvisoryClient = { async fetchBulk() { return { }; } };
     await adopt(dir, [ws("apps/elis", { dependencies: { lodash: "^4" } })], wsResolver({ "apps/elis": { lodash: "4.17.21" } }), { advisoryClient });
     assert.deepEqual(readLedger(dir)["lodash@4.17.21"].checks.advisories, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("adopt records provenance evidence per entry", async () => {
+  const dir = tmp();
+  try {
+    const registry = reg((name) => name === "sigstore" ? { attestationsUrl: "https://reg/att/sigstore" } : {});
+    const provenanceClient: ProvenanceClient = {
+      async fetch() { return { attested: true, sourceRepo: "https://github.com/sigstore/sigstore-js" }; },
+    };
+    await adopt(
+      dir,
+      [ws("apps/elis", { dependencies: { sigstore: "^1", lodash: "^4" } })],
+      wsResolver({ "apps/elis": { sigstore: "1.0.0", lodash: "4.17.21" } }),
+      { registry, provenanceClient },
+    );
+    const ledger = readLedger(dir);
+    assert.deepEqual(ledger["sigstore@1.0.0"].checks.provenance, { attested: true, sourceRepo: "https://github.com/sigstore/sigstore-js" });
+    assert.deepEqual(ledger["lodash@4.17.21"].checks.provenance, { attested: false });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("adopt: requireProvenance never affects risk (evidence-only)", async () => {
+  const dir = tmp();
+  try {
+    await adopt(
+      dir,
+      [ws("apps/elis", { dependencies: { lodash: "^4" } })],
+      wsResolver({ "apps/elis": { lodash: "4.17.21" } }),
+      { cfg: { ...DEFAULT_CONFIG, requireProvenance: "block" as const } },
+    );
+    const e = readLedger(dir)["lodash@4.17.21"];
+    assert.equal(e.risk, "low");
+    assert.deepEqual(e.checks.provenance, { attested: false });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
