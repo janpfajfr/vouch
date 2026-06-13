@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-13
+
+### Added
+
+- **Provenance attestations are now recorded.** `vouch <pkg>` and `vouch adopt` record whether each version was published with an [npm provenance attestation](https://docs.npmjs.com/generating-provenance-statements) in an optional `checks.provenance` field on the ledger entry. When the attestation is present, vouch also records the claimed source repo, commit, and CI workflow it was built from — evidence the reviewer sees in the PR diff. The field is additive: existing ledgers load unchanged, and an entry written before 0.5.0 simply has no `provenance` field (no migration).
+- **New `requireProvenance` config option** (`"off"` default, `"warn"`, `"block"`). An add-time-only gate: with `"block"`, an unattested version can't be added without `--force-with-reason`. Provenance is *always* recorded regardless of this setting — the option only controls the gate. Fail-open: the gate acts only on the registry-confirmed presence fact, so an unreachable attestation endpoint never blocks. `vouch adopt` records the evidence but never lets provenance affect a baselined dependency's risk.
+
+### Notes
+
+- vouch records the **registry-verified** provenance claim from publish time; it does **not** re-verify sigstore signatures. Use `npm audit signatures` for cryptographic re-verification.
+
 ## [0.4.0] — 2026-06-02
 
 ### Added
